@@ -1,3 +1,7 @@
+# These contain user-specific paths
+/.pio/
+/.vscode/
+
 # Prerequisites
 *.d
 
