@@ -1,3 +1,6 @@
+# Temporary until I implement wifi config
+/include/wifi_credentials.h
+
 # These contain user-specific paths
 /.pio/
 /.vscode/
