@@ -5,11 +5,11 @@ static Button *inst;
 static void onInstPressInterrupt() { inst->onPressInterrupt(); }
 static void onInstReleaseInterrupt() { inst->onReleaseInterrupt(); }
 
-void Button::setup() {
+void Button::setup(bool start_pressed) {
   inst = this;
   pinMode(pin_, INPUT_PULLUP);
   // TODO: Verify behavior if we start up with the button pressed
-  setState(State::RELEASED);
+  setState(start_pressed ? State::PRESS_DEBOUNCE : State::RELEASED);
 };
 
 // NB: This currently assumes it will be called quite frequently

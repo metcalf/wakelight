@@ -18,7 +18,7 @@ public:
       : pin_(pin), debounce_interval_ms_(debounce_interval_ms),
         hold_time_ms_(hold_time_ms), hold_repeat_ms_(hold_time_ms){};
 
-  void setup();
+  void setup(bool start_pressed);
   CallbackReason poll();
 
   void onPressInterrupt() { setState(State::PRESS_DEBOUNCE); }
@@ -26,6 +26,8 @@ public:
     detachInterrupt(pin_);
     release_start_ = true;
   }
+
+  bool isActive() { return state_ != State::RELEASED; }
 
 private:
   uint8_t pin_;
