@@ -31,7 +31,7 @@ public:
 
 private:
   uint8_t pin_;
-  volatile unsigned long next_update_time_ms_ = -1;
+  volatile uint64_t next_update_time_ms_ = -1;
   volatile bool release_start_ = false;
 
   uint debounce_interval_ms_;

@@ -1,5 +1,7 @@
 #include "Button.h"
 
+#include "helpers.h"
+
 // TODO: This should be some proper per-channel registration
 static Button *inst;
 static void onInstPressInterrupt() { inst->onPressInterrupt(); }
@@ -21,7 +23,7 @@ Button::CallbackReason Button::poll() {
     return setState(State::RELEASE_DEBOUNCE);
   }
 
-  if (millis() < next_update_time_ms_) {
+  if (millis64() < next_update_time_ms_) {
     return reason;
   }
 
@@ -91,7 +93,7 @@ Button::CallbackReason Button::setState(Button::State state) {
     break;
   case State::RELEASE_DEBOUNCE:
     detachInterrupt(pin_);
-    next_update_time_ms_ = millis() + debounce_interval_ms_;
+    next_update_time_ms_ = millis64() + debounce_interval_ms_;
 
     if (state_ == State::HELD) {
       reason = CallbackReason::HOLD_RELEASE;
@@ -101,11 +103,11 @@ Button::CallbackReason Button::setState(Button::State state) {
     break;
   case State::PRESS_DEBOUNCE:
     detachInterrupt(pin_);
-    next_update_time_ms_ = millis() + debounce_interval_ms_;
+    next_update_time_ms_ = millis64() + debounce_interval_ms_;
     break;
   case State::PRESSED:
     if (hold_time_ms_ > 0) {
-      next_update_time_ms_ = millis() + hold_time_ms_ - debounce_interval_ms_;
+      next_update_time_ms_ = millis64() + hold_time_ms_ - debounce_interval_ms_;
     } else {
       next_update_time_ms_ = -1;
     }
@@ -113,7 +115,7 @@ Button::CallbackReason Button::setState(Button::State state) {
     break;
   case State::HELD:
     if (hold_repeat_ms_ > 0) {
-      next_update_time_ms_ = millis() + hold_repeat_ms_;
+      next_update_time_ms_ = millis64() + hold_repeat_ms_;
     } else {
       next_update_time_ms_ = -1;
     }

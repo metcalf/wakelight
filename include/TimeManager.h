@@ -7,7 +7,7 @@ public:
       : network_name_(network_name), network_pswd_(network_pswd){};
 
   void init();
-  void poll();
+  bool getLocalTime(struct tm *info);
 
 private:
   const char *network_name_;
