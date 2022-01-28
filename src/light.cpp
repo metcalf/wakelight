@@ -1,8 +1,7 @@
 #include "Light.h"
 
-#include <Arduino.h>
-
 #include "driver/ledc.h"
+#include "esp_log.h"
 
 #define LED_R_GPIO GPIO_NUM_27
 #define LED_G_GPIO GPIO_NUM_14
@@ -43,7 +42,7 @@ void light_setup() {
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
     ESP_ERROR_CHECK(
         ledc_cb_register(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i, &cbs, NULL));
-    pinMode(pins[i], OUTPUT);
+    ESP_ERROR_CHECK(gpio_set_direction(pins[i], GPIO_MODE_OUTPUT));
   }
 }
 
@@ -56,7 +55,7 @@ void light_set_color(uint8_t color[3], size_t fade_time_secs) {
     } else {
       // Otherwise, ignore the input
       // TODO: Is this the best behavior?
-      Serial.println("Ignoring light_set_color when one is already pending");
+      ESP_LOGI("APP", "Ignoring light_set_color when one is already pending");
       return;
     }
   }
@@ -70,12 +69,13 @@ void light_set_color(uint8_t color[3], size_t fade_time_secs) {
 
   // The ESP32 misbehaves if you try to trigger a fade while another is running
   if (active_fades != 0) {
-    Serial.println("Deferring setColor");
+    ESP_LOGI("APP", "Deferring setColor");
     fade_pending = true;
     return;
   }
 
-  Serial.printf("setColor: R%03d|G%03d|B%03d\n", color[0], color[1], color[2]);
+  ESP_LOGI("APP", "setColor: R%03d|G%03d|B%03d\n", color[0], color[1],
+           color[2]);
 
   for (size_t i = 0; i < 3; i++) {
     active_fades |= 0x01 << i;
@@ -108,7 +108,7 @@ void light_handle_pending() {
     return; // Still handling the last fade
   }
 
-  Serial.println("Applying pending fade");
+  ESP_LOGI("APP", "Applying pending fade");
   fade_pending = false;
   light_set_color(curr_color, 1);
 }

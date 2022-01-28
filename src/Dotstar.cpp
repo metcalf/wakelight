@@ -1,10 +1,9 @@
 #include "Dotstar.h"
 
-#include "Arduino.h"
 #include "driver/rtc_io.h"
 
-#define DOTSTAR_CLK 12
-#define DOTSTAR_DATA 2
+#define DOTSTAR_CLK GPIO_NUM_12
+#define DOTSTAR_DATA GPIO_NUM_2
 #define DOTSTAR_PWR GPIO_NUM_13
 
 void Dotstar::setPower(bool state) {
@@ -14,10 +13,21 @@ void Dotstar::setPower(bool state) {
 
   rtc_gpio_hold_dis(DOTSTAR_PWR);
 
-  pinMode(DOTSTAR_PWR, state ? OUTPUT : INPUT);
-  digitalWrite(DOTSTAR_PWR, !state);
-  pinMode(DOTSTAR_DATA, state ? OUTPUT : INPUT_PULLDOWN);
-  pinMode(DOTSTAR_CLK, state ? OUTPUT : INPUT_PULLDOWN);
+  ESP_ERROR_CHECK(gpio_set_direction(DOTSTAR_PWR, state ? GPIO_MODE_OUTPUT
+                                                        : GPIO_MODE_INPUT));
+  if (state) {
+    ESP_ERROR_CHECK(gpio_set_level(DOTSTAR_PWR, 0));
+  };
+
+  gpio_set_direction(DOTSTAR_DATA, state ? GPIO_MODE_OUTPUT : GPIO_MODE_INPUT);
+  gpio_set_direction(DOTSTAR_CLK, state ? GPIO_MODE_OUTPUT : GPIO_MODE_INPUT);
+  if (state) {
+    gpio_pulldown_dis(DOTSTAR_DATA);
+    gpio_pulldown_dis(DOTSTAR_CLK);
+  } else {
+    gpio_pulldown_en(DOTSTAR_DATA);
+    gpio_pulldown_en(DOTSTAR_CLK);
+  }
 
   if (!state) {
     rtc_gpio_isolate(DOTSTAR_PWR);
@@ -32,8 +42,8 @@ void Dotstar::setColor(uint8_t color[3]) {
   if (!state_) {
     color_changed = true;
     setPower(true);
-    digitalWrite(DOTSTAR_DATA, LOW);
-    digitalWrite(DOTSTAR_CLK, LOW);
+    gpio_set_level(DOTSTAR_DATA, 0);
+    gpio_set_level(DOTSTAR_CLK, 0);
     delay(10);
   }
 
@@ -64,11 +74,11 @@ void Dotstar::setColor(uint8_t color[3]) {
 void Dotstar::swspi_out(uint8_t n) {
   for (uint8_t i = 8; i--; n <<= 1) {
     if (n & 0x80)
-      digitalWrite(DOTSTAR_DATA, HIGH);
+      gpio_set_level(DOTSTAR_DATA, 1);
     else
-      digitalWrite(DOTSTAR_DATA, LOW);
-    digitalWrite(DOTSTAR_CLK, HIGH);
-    digitalWrite(DOTSTAR_CLK, LOW);
+      gpio_set_level(DOTSTAR_DATA, 0);
+    gpio_set_level(DOTSTAR_CLK, 1);
+    gpio_set_level(DOTSTAR_CLK, 0);
   }
   delay(1);
 }

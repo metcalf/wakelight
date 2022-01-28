@@ -1,6 +1,7 @@
 #pragma once
 
-#include "Arduino.h"
+#include "driver/gpio.h"
+#include "stdint.h"
 
 // TODO: Refactor this as a ButtonGroup using a single timer, or better threads
 class Button {
@@ -13,7 +14,7 @@ public:
     HOLD_RELEASE,
   };
 
-  Button(const uint8_t pin, uint hold_time_ms = 0, uint hold_repeat_ms = 100,
+  Button(const gpio_num_t pin, uint hold_time_ms = 0, uint hold_repeat_ms = 100,
          uint debounce_interval_ms = 20)
       : pin_(pin), debounce_interval_ms_(debounce_interval_ms),
         hold_time_ms_(hold_time_ms), hold_repeat_ms_(hold_time_ms){};
@@ -21,16 +22,12 @@ public:
   void setup(bool start_pressed);
   CallbackReason poll();
 
-  void onPressInterrupt() { setState(State::PRESS_DEBOUNCE); }
-  void onReleaseInterrupt() {
-    detachInterrupt(pin_);
-    release_start_ = true;
-  }
+  void onInterrupt();
 
   bool isActive() { return state_ != State::RELEASED; }
 
 private:
-  uint8_t pin_;
+  gpio_num_t pin_;
   volatile uint64_t next_update_time_ms_ = -1;
   volatile bool release_start_ = false;
 

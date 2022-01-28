@@ -1,8 +1,8 @@
 #include "Power.h"
 
-#include "Arduino.h"
 #include "driver/rtc_io.h"
 #include "esp_adc_cal.h"
+#include "esp_log.h"
 
 #include "helpers.h"
 
@@ -16,7 +16,7 @@
 
 void Power::setup() {
   rtc_gpio_deinit(PWR_SENSE_GPIO);
-  pinMode(PWR_SENSE_GPIO, INPUT);
+  gpio_set_direction(PWR_SENSE_GPIO, GPIO_MODE_INPUT);
 }
 
 void Power::printState() {
@@ -26,8 +26,8 @@ void Power::printState() {
     return;
   }
 
-  Serial.printf("Powered: %s Bat Voltage: %0.2f\n", powered ? "Y" : "N",
-                getBatteryVoltage());
+  ESP_LOGI("APP", "Powered: %s Bat Voltage: %0.2f\n", powered ? "Y" : "N",
+           getBatteryVoltage());
 
   lastReportPoweredState_ = powered;
   nextStateReportMillis_ = millis64() + STATE_REPORT_INTERVAL_SECS * 1000;
@@ -65,7 +65,7 @@ bool Power::isPowered() {
   // cable. It also handles some instability that's probably caused
   // by choosing too high valued a resistor on the high side of the
   // voltage divider.
-  if (digitalRead(PWR_SENSE_GPIO) == LOW) {
+  if (gpio_get_level(PWR_SENSE_GPIO) == 0) {
     if (pwrSenseLowDeadline_ == 0) {
       pwrSenseLowDeadline_ = millis64() + PWR_SENSE_LOW_DELAY_MS;
     } else if (pwrSenseLowDeadline_ < millis64()) {

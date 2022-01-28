@@ -2,14 +2,17 @@
 
 #include "helpers.h"
 
-// TODO: This should be some proper per-channel registration
-static Button *inst;
-static void onInstPressInterrupt() { inst->onPressInterrupt(); }
-static void onInstReleaseInterrupt() { inst->onReleaseInterrupt(); }
+static void globalOnInterrupt(void *arg) { ((Button *)arg)->onInterrupt(); }
 
 void Button::setup(bool start_pressed) {
-  inst = this;
-  pinMode(pin_, INPUT_PULLUP);
+  gpio_config_t conf = {.pin_bit_mask = (1ULL << pin_),
+                        .mode = GPIO_MODE_INPUT,
+                        .pull_up_en = GPIO_PULLUP_ENABLE,
+                        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+                        .intr_type = GPIO_INTR_DISABLE};
+  ESP_ERROR_CHECK(gpio_config(&conf));
+  ESP_ERROR_CHECK(gpio_isr_register(globalOnInterrupt, this, 0, NULL));
+
   // TODO: Verify behavior if we start up with the button pressed
   setState(start_pressed ? State::PRESS_DEBOUNCE : State::RELEASED);
 };
@@ -27,7 +30,7 @@ Button::CallbackReason Button::poll() {
     return reason;
   }
 
-  int is_pressed = (digitalRead(pin_) == LOW);
+  int is_pressed = (gpio_get_level(pin_) == 0);
 
   switch (state_) {
   case State::RELEASED:
@@ -88,11 +91,12 @@ Button::CallbackReason Button::setState(Button::State state) {
 
   switch (state) {
   case State::RELEASED:
-    attachInterrupt(pin_, onInstPressInterrupt, FALLING);
+    ESP_ERROR_CHECK(gpio_set_intr_type(pin_, GPIO_INTR_NEGEDGE));
+    ESP_ERROR_CHECK(gpio_intr_enable(pin_));
     next_update_time_ms_ = -1;
     break;
   case State::RELEASE_DEBOUNCE:
-    detachInterrupt(pin_);
+    ESP_ERROR_CHECK(gpio_intr_disable(pin_));
     next_update_time_ms_ = millis64() + debounce_interval_ms_;
 
     if (state_ == State::HELD) {
@@ -102,7 +106,7 @@ Button::CallbackReason Button::setState(Button::State state) {
     }
     break;
   case State::PRESS_DEBOUNCE:
-    detachInterrupt(pin_);
+    ESP_ERROR_CHECK(gpio_intr_disable(pin_));
     next_update_time_ms_ = millis64() + debounce_interval_ms_;
     break;
   case State::PRESSED:
@@ -111,7 +115,8 @@ Button::CallbackReason Button::setState(Button::State state) {
     } else {
       next_update_time_ms_ = -1;
     }
-    attachInterrupt(pin_, onInstReleaseInterrupt, RISING);
+    ESP_ERROR_CHECK(gpio_set_intr_type(pin_, GPIO_INTR_POSEDGE));
+    ESP_ERROR_CHECK(gpio_intr_enable(pin_));
     break;
   case State::HELD:
     if (hold_repeat_ms_ > 0) {
@@ -128,4 +133,13 @@ Button::CallbackReason Button::setState(Button::State state) {
   state_ = state;
 
   return reason;
+}
+
+void Button::onInterrupt() {
+  if (state_ == State::RELEASED) {
+    setState(State::PRESS_DEBOUNCE);
+  } else {
+    ESP_ERROR_CHECK(gpio_intr_disable(pin_));
+    release_start_ = true;
+  }
 }

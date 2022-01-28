@@ -1,10 +1,10 @@
-#include <Arduino.h>
+
 
 #include "driver/rtc_io.h"
+#include "esp_log.h"
 #include "esp_sleep.h"
 #include "esp_wifi.h"
 #include "soc/rtc.h"
-#include <WiFi.h>
 
 #include <algorithm>
 #include <iterator>
@@ -60,7 +60,7 @@ void setup() {
   // NB: I don't know if this is necessary/does anything
   rtc_clk_slow_freq_set(RTC_SLOW_FREQ_8MD256);
 
-  Serial.printf("wakeup reason: %d\n", wakeup_reason);
+  ESP_LOGI("APP", "wakeup reason: %d\n", wakeup_reason);
 
   if (wakeup_reason != ESP_SLEEP_WAKEUP_UNDEFINED) {
     rtc_gpio_deinit(BUTTON_GPIO);
@@ -72,18 +72,18 @@ void setup() {
   // press debounce routine.
   button.setup(wakeup_reason == ESP_SLEEP_WAKEUP_EXT0);
 
-  Serial.println("Configuring LEDs");
+  ESP_LOGI("APP", "Configuring LEDs");
   light_setup();
 
   if (power.isPowered()) {
-    Serial.println("Initializing time manager");
+    ESP_LOGI("APP", "Initializing time manager");
     timeManager.init();
   }
 }
 
 // TODO: Handle race between this and button press
 void enterSleep(uint64_t sleep_time_ms) {
-  Serial.println("Going to sleep");
+  ESP_LOGI("APP", "Going to sleep");
   Serial.flush();
 
   dotstar.setPower(false);
@@ -121,9 +121,9 @@ void loop() {
   if (nextLightUpdate < millis64()) {
     if (timeManager.getLocalTime(&timeinfo)) {
       update = lightManager.update(timeinfo);
-      Serial.printf("%02d:%02d R%03d|G%03d|B%03d next: %d\r\n",
-                    timeinfo.tm_hour, timeinfo.tm_min, update.color[0],
-                    update.color[1], update.color[2], update.nextUpdateSecs);
+      ESP_LOGI("APP", "%02d:%02d R%03d|G%03d|B%03d next: %d\r\n",
+               timeinfo.tm_hour, timeinfo.tm_min, update.color[0],
+               update.color[1], update.color[2], update.nextUpdateSecs);
 
       if (!std::equal(std::begin(lastUpdateColor), std::end(lastUpdateColor),
                       std::begin(update.color))) {
@@ -143,17 +143,17 @@ void loop() {
   Button::CallbackReason buttonReason = button.poll();
   switch (buttonReason) {
   case Button::CallbackReason::PRESS_RELEASE:
-    Serial.println("Button: PRESS_RELEASE");
+    ESP_LOGI("APP", "Button: PRESS_RELEASE");
     light_toggle(BUTTON_FADE_TIME_SECS);
     break;
   case Button::CallbackReason::HOLD_START:
-    Serial.println("Button: HOLD_START");
+    ESP_LOGI("APP", "Button: HOLD_START");
     break;
   case Button::CallbackReason::HOLD_REPEAT:
-    Serial.println("Button: HOLD_REPEAT");
+    ESP_LOGI("APP", "Button: HOLD_REPEAT");
     break;
   case Button::CallbackReason::HOLD_RELEASE:
-    Serial.println("Button: HOLD_RELEASE");
+    ESP_LOGI("APP", "Button: HOLD_RELEASE");
     break;
   case Button::CallbackReason::NONE:
     break;
