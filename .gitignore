@@ -1,6 +1,8 @@
 # Temporary until I implement wifi config
 /include/wifi_credentials.h
 
+sdkconfig.tinypico.old
+
 # These contain user-specific paths
 /.pio/
 /.vscode/
