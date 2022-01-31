@@ -1,9 +1,14 @@
 
 
+#include "freertos/FreeRTOS.h"
+
 #include "driver/rtc_io.h"
+#include "driver/uart.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
+#include "esp_task_wdt.h"
 #include "esp_wifi.h"
+#include "nvs_flash.h"
 #include "soc/rtc.h"
 
 #include <algorithm>
@@ -14,9 +19,9 @@
 #include "Dotstar.h"
 #include "LightManager.h"
 #include "Power.h"
-#include "TimeManager.h"
 #include "helpers.h"
 #include "light.h"
+#include "network_time_manager.h"
 #include "wifi_credentials.h"
 
 #define ACTION_FADE_TIME_SECS 5
@@ -39,7 +44,6 @@ std::vector<LightManager::Action> actions = {
     LightManager::Action{LightManager::HrMin{.hour = 18, .minute = 45},
                          {40, 35, 30}},
 };
-TimeManager timeManager(hardcoded_network_name, hardcoded_network_pswd);
 LightManager lightManager(actions);
 Button button(BUTTON_GPIO, BUTTON_HOLD_MS);
 Dotstar dotstar;
@@ -48,52 +52,16 @@ Power power;
 uint64_t nextLightUpdate;
 RTC_DATA_ATTR uint8_t lastUpdateColor[3];
 
-void setup() {
-  esp_log_level_set("*", ESP_LOG_INFO);
-
-  Serial.begin(115200);
-
-  esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
-
-  power.setup();
-
-  // NB: I don't know if this is necessary/does anything
-  rtc_clk_slow_freq_set(RTC_SLOW_FREQ_8MD256);
-
-  ESP_LOGI("APP", "wakeup reason: %d\n", wakeup_reason);
-
-  if (wakeup_reason != ESP_SLEEP_WAKEUP_UNDEFINED) {
-    rtc_gpio_deinit(BUTTON_GPIO);
-  }
-
-  pinMode(BUTTON_GPIO, INPUT_PULLUP);
-
-  // If wake was triggered by the button going low, the button should start its
-  // press debounce routine.
-  button.setup(wakeup_reason == ESP_SLEEP_WAKEUP_EXT0);
-
-  ESP_LOGI("APP", "Configuring LEDs");
-  light_setup();
-
-  if (power.isPowered()) {
-    ESP_LOGI("APP", "Initializing time manager");
-    timeManager.init();
-  }
-}
-
 // TODO: Handle race between this and button press
 void enterSleep(uint64_t sleep_time_ms) {
   ESP_LOGI("APP", "Going to sleep");
-  Serial.flush();
+  ESP_ERROR_CHECK(uart_wait_tx_done(UART_NUM_0, 10)); // 10 RTOS ticks
 
   dotstar.setPower(false);
-  // TODO: I suspect these need to change for Nimble based BLE
-  if (btStarted()) {
-    btStop();
-  }
-  WiFi.mode(WIFI_MODE_NULL);
+  // TODO: Stop BLE on sleep once we implement it
+  esp_wifi_stop();
 
-  esp_sleep_enable_ext0_wakeup(BUTTON_GPIO, LOW);
+  esp_sleep_enable_ext0_wakeup(BUTTON_GPIO, 0);
   rtc_gpio_pullup_en(BUTTON_GPIO);
   // EXT1 uses a GPIO bitmask instead of the raw GPIO number
   esp_sleep_enable_ext1_wakeup(0x01 << PWR_SENSE_GPIO,
@@ -119,7 +87,7 @@ void loop() {
   power.printState();
 
   if (nextLightUpdate < millis64()) {
-    if (timeManager.getLocalTime(&timeinfo)) {
+    if (ntm_get_local_time(&timeinfo)) {
       update = lightManager.update(timeinfo);
       ESP_LOGI("APP", "%02d:%02d R%03d|G%03d|B%03d next: %d\r\n",
                timeinfo.tm_hour, timeinfo.tm_min, update.color[0],
@@ -161,7 +129,7 @@ void loop() {
 
   if (power.isPowered()) {
     uint8_t color[3]{0, 0, 0};
-    if (WiFi.isConnected()) {
+    if (ntm_is_connected()) {
       color[1] = 10;
     } else {
       color[2] = 10;
@@ -169,8 +137,8 @@ void loop() {
     dotstar.setColor(color);
 
     // If WiFi is disabled (e.g. after sleep), re-enable it so we can fetch time
-    if (WiFi.getMode() != WIFI_MODE_STA) {
-      timeManager.init();
+    if (!ntm_is_active()) {
+      ntm_connect();
     }
   } else {
     uint8_t color[3]{10, 0, 0};
@@ -178,7 +146,55 @@ void loop() {
 
     if (!button.isActive() && !light_is_fading() && nextLightUpdate > 0) {
       // TODO: Add some logic for periodic clock updates (may not be necessary)
-      enterSleep((nextLightUpdate - millis64()) * 1000);
+      enterSleep((nextLightUpdate - millis64()));
     }
+  }
+}
+
+extern "C" void app_main() {
+  esp_log_level_set("*", ESP_LOG_INFO);
+
+  uart_set_baudrate(UART_NUM_0, 115200);
+
+  esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+
+  //Initialize NVS
+  esp_err_t ret = nvs_flash_init();
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
+      ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    ret = nvs_flash_init();
+  }
+  ESP_ERROR_CHECK(ret);
+
+  power.setup();
+
+  // NB: I don't know if this is necessary/does anything
+  rtc_clk_slow_freq_set(RTC_SLOW_FREQ_8MD256);
+
+  ESP_LOGI("APP", "wakeup reason: %d\n", wakeup_reason);
+
+  if (wakeup_reason != ESP_SLEEP_WAKEUP_UNDEFINED) {
+    ESP_ERROR_CHECK(rtc_gpio_deinit(BUTTON_GPIO));
+  }
+
+  // If wake was triggered by the button going low, the button should start its
+  // press debounce routine.
+  button.setup(wakeup_reason == ESP_SLEEP_WAKEUP_EXT0);
+
+  ESP_LOGI("APP", "Configuring LEDs");
+  light_setup();
+
+  ESP_LOGI("APP", "Initializing network time manager");
+  ntm_init(hardcoded_network_name, hardcoded_network_pswd);
+
+  // TODO: Instead of an infinite loop this should probably be a task and things like Button that
+  // need finer resolution than a single tick (10ms) should be implemented using timers. Or I could just
+  // speed up the tick interval or accept lower resolution
+  while (1) {
+    esp_task_wdt_reset();
+    loop();
+    // TODO: Consider switching tick rate back to 100hz and doing less with a loop
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 }

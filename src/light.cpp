@@ -30,6 +30,9 @@ void light_setup() {
 
   ESP_ERROR_CHECK(ledc_fade_func_install(0));
 
+  gpio_config_t gpio_cfg{};
+  gpio_cfg.mode = GPIO_MODE_OUTPUT;
+
   gpio_num_t pins[3] = {LED_R_GPIO, LED_G_GPIO, LED_B_GPIO};
   for (int i = 0; i < 3; i++) {
     ledc_channel_config_t ledc_channel = {.gpio_num = pins[i],
@@ -42,8 +45,10 @@ void light_setup() {
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
     ESP_ERROR_CHECK(
         ledc_cb_register(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i, &cbs, NULL));
-    ESP_ERROR_CHECK(gpio_set_direction(pins[i], GPIO_MODE_OUTPUT));
+    gpio_cfg.pin_bit_mask |= (1ULL << pins[i]);
   }
+
+  ESP_ERROR_CHECK(gpio_config(&gpio_cfg));
 }
 
 void light_set_color(uint8_t color[3], size_t fade_time_secs) {

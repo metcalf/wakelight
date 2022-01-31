@@ -8,11 +8,12 @@
 
 #define UPPER_DIVIDER 442
 #define LOWER_DIVIDER 160
-#define DEFAULT_VREF 1100 // Default referance voltage in mv
-#define BAT_VOLTAGE 35
-#define BATT_CHANNEL ADC1_CHANNEL_7 // Battery voltage ADC input
+#define DEFAULT_VREF 1100                   // Default referance voltage in mv
+#define BATT_VOLTAGE_CHANNEL ADC1_CHANNEL_7 // Battery voltage ADC input
 #define PWR_SENSE_LOW_DELAY_MS 1000
 #define STATE_REPORT_INTERVAL_SECS 60
+
+static esp_adc_cal_characteristics_t adc_chars_;
 
 void Power::setup() {
   rtc_gpio_deinit(PWR_SENSE_GPIO);
@@ -35,22 +36,26 @@ void Power::printState() {
 
 float Power::getBatteryVoltage() {
   uint32_t raw, mv;
-  esp_adc_cal_characteristics_t chars;
+
+  if (adc_chars_.adc_num == 0) {
+    // Get ADC calibration values once
+    esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_11db, ADC_WIDTH_BIT_12,
+                             DEFAULT_VREF, &adc_chars_);
+  }
 
   // only check voltage every 1 second
   if (nextVoltageTimeMillis_ - millis64() > 0) {
     nextVoltageTimeMillis_ = millis64() + 1000;
 
-    // grab latest voltage
-    analogRead(BAT_VOLTAGE);          // Just to get the ADC setup
-    raw = adc1_get_raw(BATT_CHANNEL); // Read of raw ADC value
-
-    // Get ADC calibration values
-    esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_11db, ADC_WIDTH_BIT_12,
-                             DEFAULT_VREF, &chars);
+    // Configure ADC and grab voltage
+    // TODO: We probably only have to do this once, unclear how that interacts with light sleep
+    ESP_ERROR_CHECK(adc1_config_width((adc_bits_width_t)ADC_WIDTH_BIT_DEFAULT));
+    ESP_ERROR_CHECK(
+        adc1_config_channel_atten(BATT_VOLTAGE_CHANNEL, ADC_ATTEN_11db));
+    raw = adc1_get_raw(BATT_VOLTAGE_CHANNEL); // Read of raw ADC value
 
     // Convert to calibrated mv then volts
-    mv = esp_adc_cal_raw_to_voltage(raw, &chars) *
+    mv = esp_adc_cal_raw_to_voltage(raw, &adc_chars_) *
          (LOWER_DIVIDER + UPPER_DIVIDER) / LOWER_DIVIDER;
     lastMeasuredVoltage_ = (float)mv / 1000.0;
   }
