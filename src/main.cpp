@@ -55,25 +55,24 @@ RTC_DATA_ATTR uint8_t lastUpdateColor[3];
 // TODO: Handle race between this and button press
 void enterSleep(uint64_t sleep_time_ms) {
   ESP_LOGI("APP", "Going to sleep");
-  ESP_ERROR_CHECK(uart_wait_tx_done(UART_NUM_0, 10)); // 10 RTOS ticks
 
   dotstar.setPower(false);
   // TODO: Stop BLE on sleep once we implement it
-  esp_wifi_stop();
+  ntm_disconnect();
 
-  esp_sleep_enable_ext0_wakeup(BUTTON_GPIO, 0);
-  rtc_gpio_pullup_en(BUTTON_GPIO);
+  ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(BUTTON_GPIO, 0));
+  ESP_ERROR_CHECK(rtc_gpio_pullup_en(BUTTON_GPIO));
   // EXT1 uses a GPIO bitmask instead of the raw GPIO number
-  esp_sleep_enable_ext1_wakeup(0x01 << PWR_SENSE_GPIO,
-                               ESP_EXT1_WAKEUP_ANY_HIGH);
-  esp_sleep_enable_timer_wakeup(sleep_time_ms * 1000);
+  ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup(1ULL << PWR_SENSE_GPIO,
+                                               ESP_EXT1_WAKEUP_ANY_HIGH));
+  ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(sleep_time_ms * 1000));
 
   // TODO: Just using light sleep for now because for some reason
   // deep sleep isn't waking up.
   // if (lightOn) {
   // Only light sleep appears to support running ledc
   // For some reason we need to explicitly tell the ESP32 to keep the 8mhz clock on for ledc.
-  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC8M, ESP_PD_OPTION_ON);
+  ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_RTC8M, ESP_PD_OPTION_ON));
   ESP_ERROR_CHECK(esp_light_sleep_start());
   // } else {
   //   esp_deep_sleep_start();
@@ -104,6 +103,7 @@ void loop() {
       // TODO: recheck this after clock updates
       nextLightUpdate = millis64() + update.nextUpdateSecs * 1000;
     } else {
+      ESP_LOGI("APP", "Awaiting time...");
       nextLightUpdate = millis64() + 1000; // Check the time again in a second
     }
   }
@@ -167,12 +167,12 @@ extern "C" void app_main() {
   }
   ESP_ERROR_CHECK(ret);
 
-  power.setup();
-
   // NB: I don't know if this is necessary/does anything
   rtc_clk_slow_freq_set(RTC_SLOW_FREQ_8MD256);
 
   ESP_LOGI("APP", "wakeup reason: %d\n", wakeup_reason);
+
+  power.setup();
 
   if (wakeup_reason != ESP_SLEEP_WAKEUP_UNDEFINED) {
     ESP_ERROR_CHECK(rtc_gpio_deinit(BUTTON_GPIO));

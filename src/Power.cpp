@@ -16,8 +16,11 @@
 static esp_adc_cal_characteristics_t adc_chars_;
 
 void Power::setup() {
-  rtc_gpio_deinit(PWR_SENSE_GPIO);
-  gpio_set_direction(PWR_SENSE_GPIO, GPIO_MODE_INPUT);
+  gpio_config_t gpio_cfg{};
+  gpio_cfg.mode = GPIO_MODE_INPUT;
+  gpio_cfg.pin_bit_mask = (1ULL << PWR_SENSE_GPIO);
+  ESP_ERROR_CHECK(gpio_config(&gpio_cfg));
+  rtc_gpio_hold_en(PWR_SENSE_GPIO);
 }
 
 void Power::printState() {
