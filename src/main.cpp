@@ -24,8 +24,8 @@
 #include "network_time_manager.h"
 #include "wifi_credentials.h"
 
-#define ACTION_FADE_TIME_SECS 5
-#define BUTTON_FADE_TIME_SECS 1
+#define ACTION_FADE_MS_PER_STEP 235 // ~1m (1000 * 60 / 255)
+#define BUTTON_FADE_MS_PER_STEP 4   // ~1 second
 #define BUTTON_HOLD_MS 5 * 1000
 
 #define BUTTON_GPIO GPIO_NUM_4
@@ -36,13 +36,13 @@ std::vector<LightManager::Action> actions = {
     //                      {255, 0, 0}},
     // Wake
     LightManager::Action{LightManager::HrMin{.hour = 6, .minute = 30},
-                         {255, 200, 0}},
+                         {255, 160, 0}},
     // Wake off
     LightManager::Action{LightManager::HrMin{.hour = 7, .minute = 30},
                          {0, 0, 0}},
     // Nightlight
     LightManager::Action{LightManager::HrMin{.hour = 18, .minute = 45},
-                         {40, 35, 30}},
+                         {40, 32, 25}},
 };
 LightManager lightManager(actions);
 Button button(BUTTON_GPIO, BUTTON_HOLD_MS);
@@ -50,7 +50,7 @@ Dotstar dotstar;
 Power power;
 
 uint64_t nextLightUpdateMillis;
-RTC_DATA_ATTR uint8_t lastUpdateColor[3];
+uint8_t lastUpdateColor[3];
 
 // TODO: Handle race between this and button press
 void enterSleep(uint64_t sleep_time_ms) {
@@ -97,7 +97,7 @@ void loop() {
         for (size_t i = 0; i < 3; i++) {
           lastUpdateColor[i] = update.color[i];
         }
-        light_set_color(update.color, ACTION_FADE_TIME_SECS);
+        light_set_color(update.color, ACTION_FADE_MS_PER_STEP);
       }
 
       nextLightUpdateMillis = millis64() + update.nextUpdateSecs * 1000;
@@ -112,7 +112,7 @@ void loop() {
   switch (buttonReason) {
   case Button::CallbackReason::PRESS_RELEASE:
     ESP_LOGI("APP", "Button: PRESS_RELEASE");
-    light_toggle(BUTTON_FADE_TIME_SECS);
+    light_toggle(BUTTON_FADE_MS_PER_STEP);
     break;
   case Button::CallbackReason::HOLD_START:
     ESP_LOGI("APP", "Button: HOLD_START");

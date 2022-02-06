@@ -43,7 +43,7 @@ static size_t s_http_output_len;
 
 /* FreeRTOS event group to signal when we are connected*/
 static EventGroupHandle_t s_ntm_event_group;
-static TaskHandle_t tz_fetch_task_handle;
+static TaskHandle_t s_tz_fetch_task_handle;
 
 void sntp_sync_time(struct timeval *tv) {
   struct timeval old;
@@ -191,7 +191,7 @@ void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id,
     ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
     s_retry_num = 0;
 
-    xTaskNotify(tz_fetch_task_handle, 0, eNoAction);
+    xTaskNotify(s_tz_fetch_task_handle, 0, eNoAction);
 
     // Restart sntp every time we reconnect to reset the polling timeout
     if (sntp_enabled()) {
@@ -224,7 +224,7 @@ void ntm_init(const char *network_name, const char *network_pswd) {
 
   // TODO: Handle stop/disconnect while task is active
   xTaskCreate(&tz_fetch_task, "tz_fetch_task", 8192, NULL, tskIDLE_PRIORITY + 1,
-              &tz_fetch_task_handle);
+              &s_tz_fetch_task_handle);
 
   ESP_ERROR_CHECK(esp_netif_init());
 

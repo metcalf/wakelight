@@ -1,25 +1,47 @@
 #include "Light.h"
 
+#include <algorithm>
+
 #include "driver/ledc.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/timers.h"
+
+#include "helpers.h"
 
 #define LED_R_GPIO GPIO_NUM_27
 #define LED_G_GPIO GPIO_NUM_14
 #define LED_B_GPIO GPIO_NUM_15
 
-RTC_DATA_ATTR uint8_t curr_color[3];
-RTC_DATA_ATTR bool light_on;
-volatile uint8_t active_fades;
-bool fade_pending;
+static uint64_t s_end_ms;
+static uint8_t s_target_color[3];
+static double s_delta_per_ms[3];
 
-bool IRAM_ATTR on_fade_end(const ledc_cb_param_t *param, void *user_arg) {
-  if (param->event == LEDC_FADE_END_EVT) {
-    active_fades &= ~(0x01 << param->channel); // Clear active channel bit
+static StaticTimer_t s_fade_timer;
+static TimerHandle_t s_fade_timer_handle;
+
+void fade_timer_cb(void *pvParameters) {
+  uint64_t now = millis64();
+  bool done = now >= s_end_ms;
+
+  for (size_t i = 0; i < 3; i++) {
+    uint8_t duty;
+    if (done) {
+      duty = s_target_color[i];
+    } else {
+      duty = s_target_color[i] - s_delta_per_ms[i] * (s_end_ms - now);
+    }
+    ESP_ERROR_CHECK(
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i));
   }
-  return false; // Callback does not request a yield
+
+  if (done) {
+    s_end_ms = 0;
+    xTimerStop(s_fade_timer_handle, 0);
+  }
 }
 
-ledc_cbs_t cbs = {.fade_cb = on_fade_end};
 void light_setup() {
   ledc_timer_config_t ledc_timer = {.speed_mode = LEDC_LOW_SPEED_MODE,
                                     .duty_resolution = LEDC_TIMER_8_BIT,
@@ -28,8 +50,6 @@ void light_setup() {
                                     .clk_cfg = LEDC_USE_RTC8M_CLK};
   ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
 
-  ESP_ERROR_CHECK(ledc_fade_func_install(0));
-
   gpio_num_t pins[3] = {LED_R_GPIO, LED_G_GPIO, LED_B_GPIO};
   for (int i = 0; i < 3; i++) {
     ledc_channel_config_t ledc_channel = {.gpio_num = pins[i],
@@ -37,77 +57,57 @@ void light_setup() {
                                           .channel = (ledc_channel_t)i,
                                           .intr_type = LEDC_INTR_DISABLE,
                                           .timer_sel = LEDC_TIMER_0,
-                                          .duty = curr_color[i],
+                                          .duty = s_target_color[i],
                                           .hpoint = 0};
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
-    ESP_ERROR_CHECK(
-        ledc_cb_register(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i, &cbs, NULL));
   }
+
+  s_fade_timer_handle =
+      xTimerCreateStatic("light_fade", pdMS_TO_TICKS(10), pdTRUE, NULL,
+                         fade_timer_cb, &s_fade_timer);
 }
 
-void light_set_color(uint8_t color[3], size_t fade_time_secs) {
-  if (fade_pending) {
-    if (active_fades == 0) {
-      // If there's a fade pending but we're done with the previous fade, just
-      // throw out the pending fade so we can use the new value.
-      fade_pending = false;
-    } else {
-      // Otherwise, ignore the input
-      // TODO: Is this the best behavior?
-      ESP_LOGI("APP", "Ignoring light_set_color when one is already pending");
-      return;
-    }
-  }
+void light_set_color(uint8_t color[3], size_t fade_ms_per_step) {
+  xTimerStop(s_fade_timer_handle, portMAX_DELAY);
 
-  bool isOn = false;
+  uint64_t now = millis64();
+  uint8_t max_delta;
   for (size_t i = 0; i < 3; i++) {
-    isOn = isOn || (color[i] != 0);
-    curr_color[i] = color[i];
-  }
-  light_on = isOn;
+    uint8_t start_color = ledc_get_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i);
+    s_target_color[i] = color[i];
+    s_delta_per_ms[i] = (double)((int64_t)s_target_color[i] - start_color);
 
-  // The ESP32 misbehaves if you try to trigger a fade while another is running
-  if (active_fades != 0) {
-    ESP_LOGI("APP", "Deferring setColor");
-    fade_pending = true;
-    return;
+    max_delta =
+        std::max(max_delta, (uint8_t)abs((int)s_target_color[i] - start_color));
   }
 
-  ESP_LOGI("APP", "setColor: R%03d|G%03d|B%03d\n", color[0], color[1],
-           color[2]);
-
+  s_end_ms = now + max_delta * fade_ms_per_step;
   for (size_t i = 0; i < 3; i++) {
-    active_fades |= 0x01 << i;
-    ESP_ERROR_CHECK(ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE,
-                                            (ledc_channel_t)i, color[i],
-                                            fade_time_secs * 1000));
-    ESP_ERROR_CHECK(ledc_fade_start(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i,
-                                    LEDC_FADE_NO_WAIT));
+    s_delta_per_ms[i] /= (s_end_ms - now);
   }
+
+  ESP_LOGI(
+      "APP",
+      "setColor: R%03d|G%03d|B%03d now:%llu end:%llu s_delta_per_ms[0]:%f\n",
+      color[0], color[1], color[2], now, s_end_ms, s_delta_per_ms[0]);
+
+  xTimerStart(s_fade_timer_handle, 0);
 }
 
-void light_toggle(uint fade_time_secs) {
+void light_toggle(uint fade_ms_per_step) {
+  bool is_on = false;
+  for (size_t i = 0; i < 3; i++) {
+    is_on = is_on || (s_target_color[i] != 0);
+  }
+
   uint8_t c;
-  if (light_on) {
+  if (is_on) {
     c = 0;
   } else {
     c = 255;
   }
   uint8_t color[3]{c, c, c};
-  light_set_color(color, fade_time_secs);
+  light_set_color(color, fade_ms_per_step);
 }
 
-bool light_is_fading() { return fade_pending || active_fades != 0; }
-
-void light_handle_pending() {
-  if (!fade_pending) {
-    return; // Nothing to do
-  }
-  if (active_fades != 0) {
-    return; // Still handling the last fade
-  }
-
-  ESP_LOGI("APP", "Applying pending fade");
-  fade_pending = false;
-  light_set_color(curr_color, 1);
-}
+bool light_is_fading() { return s_end_ms > 0; }
