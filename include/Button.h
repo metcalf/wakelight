@@ -3,7 +3,6 @@
 #include "driver/gpio.h"
 #include "stdint.h"
 
-// TODO: Refactor this as a ButtonGroup using a single timer, or better threads
 class Button {
 public:
   enum class CallbackReason {

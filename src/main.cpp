@@ -49,7 +49,7 @@ Button button(BUTTON_GPIO, BUTTON_HOLD_MS);
 Dotstar dotstar;
 Power power;
 
-uint64_t nextLightUpdate;
+uint64_t nextLightUpdateMillis;
 RTC_DATA_ATTR uint8_t lastUpdateColor[3];
 
 // TODO: Handle race between this and button press
@@ -85,7 +85,7 @@ void loop() {
 
   power.printState();
 
-  if (nextLightUpdate < millis64()) {
+  if (nextLightUpdateMillis < millis64() || ntm_poll_clock_updated()) {
     if (ntm_get_local_time(&timeinfo)) {
       update = lightManager.update(timeinfo);
       ESP_LOGI("APP", "%02d:%02d R%03d|G%03d|B%03d next: %d\r\n",
@@ -100,11 +100,11 @@ void loop() {
         light_set_color(update.color, ACTION_FADE_TIME_SECS);
       }
 
-      // TODO: recheck this after clock updates
-      nextLightUpdate = millis64() + update.nextUpdateSecs * 1000;
+      nextLightUpdateMillis = millis64() + update.nextUpdateSecs * 1000;
     } else {
       ESP_LOGI("APP", "Awaiting time...");
-      nextLightUpdate = millis64() + 1000; // Check the time again in a second
+      nextLightUpdateMillis =
+          millis64() + 1000; // Check the time again in a second
     }
   }
 
@@ -144,9 +144,9 @@ void loop() {
     uint8_t color[3]{10, 0, 0};
     dotstar.setColor(color);
 
-    if (!button.isActive() && !light_is_fading() && nextLightUpdate > 0) {
+    if (!button.isActive() && !light_is_fading() && nextLightUpdateMillis > 0) {
       // TODO: Add some logic for periodic clock updates (may not be necessary)
-      enterSleep((nextLightUpdate - millis64()));
+      enterSleep((nextLightUpdateMillis - millis64()));
     }
   }
 }
@@ -188,9 +188,6 @@ extern "C" void app_main() {
   ESP_LOGI("APP", "Initializing network time manager");
   ntm_init(hardcoded_network_name, hardcoded_network_pswd);
 
-  // TODO: Instead of an infinite loop this should probably be a task and things like Button that
-  // need finer resolution than a single tick (10ms) should be implemented using timers. Or I could just
-  // speed up the tick interval or accept lower resolution
   while (1) {
     esp_task_wdt_reset();
     loop();
