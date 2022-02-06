@@ -3,6 +3,7 @@
 void ntm_init(const char *network_name, const char *network_pswd);
 void ntm_connect();
 void ntm_disconnect();
+bool ntm_has_error();
 bool ntm_is_connected();
 bool ntm_is_active();
 bool ntm_poll_clock_updated();

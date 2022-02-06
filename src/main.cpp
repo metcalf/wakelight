@@ -24,7 +24,7 @@
 #include "network_time_manager.h"
 #include "wifi_credentials.h"
 
-#define ACTION_FADE_MS_PER_STEP 235 // ~1m (1000 * 60 / 255)
+#define ACTION_FADE_MS_PER_STEP 705 // ~3m (1000 * 60 * 3 / 255)
 #define BUTTON_FADE_MS_PER_STEP 4   // ~1 second
 #define BUTTON_HOLD_MS 5 * 1000
 
@@ -128,18 +128,22 @@ void loop() {
   }
 
   if (power.isPowered()) {
-    uint8_t color[3]{0, 0, 0};
-    if (ntm_is_connected()) {
-      color[1] = 10;
-    } else {
-      color[2] = 10;
-    }
-    dotstar.setColor(color);
-
     // If WiFi is disabled (e.g. after sleep), re-enable it so we can fetch time
     if (!ntm_is_active()) {
       ntm_connect();
     }
+
+    uint8_t color[3]{0, 0, 0};
+    if (ntm_has_error()) {
+      // Purple
+      color[0] = 15;
+      color[2] = 10;
+    } else if (ntm_is_connected()) {
+      color[1] = 10; // green
+    } else {
+      color[2] = 10; // blue
+    }
+    dotstar.setColor(color);
   } else {
     uint8_t color[3]{10, 0, 0};
     dotstar.setColor(color);

@@ -19,7 +19,8 @@
 #define WIFI_CONNECTED_BIT BIT1
 #define WIFI_FAIL_BIT BIT2
 #define TZ_READY_BIT BIT3
-#define CLOCK_UPDATED_BIT BIT4
+#define TZ_FAIL_BIT BIT4
+#define CLOCK_UPDATED_BIT BIT5
 
 const char *TAG = "ntm";
 
@@ -40,6 +41,7 @@ static wifi_config_t s_wifi_config = {
 
 static int s_retry_num = 0;
 static size_t s_http_output_len;
+static char s_response_buffer[MAX_HTTP_OUTPUT_BUFFER]{};
 
 /* FreeRTOS event group to signal when we are connected*/
 static EventGroupHandle_t s_ntm_event_group;
@@ -86,6 +88,7 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
     }
 
     memcpy(evt->user_data + s_http_output_len, evt->data, evt->data_len);
+    s_http_output_len += evt->data_len;
     break;
   }
   case HTTP_EVENT_ON_FINISH:
@@ -102,7 +105,6 @@ void tz_fetch_task(void *pvParameters) {
   while (1) {
     xTaskNotifyWaitIndexed(0, 0, ULONG_MAX, NULL, portMAX_DELAY);
     s_http_output_len = 0;
-    char local_response_buffer[MAX_HTTP_OUTPUT_BUFFER]{};
     /**
      * NOTE: All the configuration parameters for http_client must be spefied either in URL or as host and path parameters.
      * If host and path parameters are not set, query parameter will be ignored. In such cases,
@@ -116,7 +118,7 @@ void tz_fetch_task(void *pvParameters) {
         .query = "fields=status,message,timezone",
         .event_handler = _http_event_handler,
         .user_data =
-            local_response_buffer, // Pass address of local buffer to get response
+            s_response_buffer, // Pass address of local buffer to get response
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
 
@@ -131,15 +133,18 @@ void tz_fetch_task(void *pvParameters) {
 
     esp_http_client_cleanup(client);
 
-    if (strncmp("success,", local_response_buffer, 8) == 0) {
+    s_response_buffer[s_http_output_len] = 0; // Null-terminate string
+
+    if (strncmp("success,", s_response_buffer, 8) == 0) {
       const char *response_tz =
-          (char *)local_response_buffer + 8; // Advance past 'success,'
+          (char *)s_response_buffer + 8; // Advance past 'success,'
       // Replace newline with terminating null byte
       *strchr(response_tz, '\n') = 0;
       const char *posix_str = micro_tz_db_get_posix_str(response_tz);
 
       if (posix_str == NULL) {
         ESP_LOGE(TAG, "Unable to find POSIX string for zone %s", response_tz);
+        xEventGroupSetBits(s_ntm_event_group, TZ_FAIL_BIT);
       } else {
         ESP_LOGI(TAG, "Setting TZ=%s for zone %s", posix_str, response_tz);
         setenv("TZ", posix_str, 1);
@@ -147,10 +152,11 @@ void tz_fetch_task(void *pvParameters) {
 
         xEventGroupSetBits(s_ntm_event_group, TZ_READY_BIT);
         xEventGroupSetBits(s_ntm_event_group, CLOCK_UPDATED_BIT);
+        xEventGroupClearBits(s_ntm_event_group, TZ_FAIL_BIT);
       }
     } else {
-      ESP_LOGE(TAG, "Error fetching timezone from IP: %s",
-               local_response_buffer);
+      ESP_LOGE(TAG, "Error fetching timezone from IP: %s", s_response_buffer);
+      xEventGroupSetBits(s_ntm_event_group, TZ_FAIL_BIT);
     }
   }
 
@@ -246,6 +252,10 @@ void ntm_init(const char *network_name, const char *network_pswd) {
 void ntm_disconnect() {
   ESP_ERROR_CHECK(esp_wifi_stop());
   xEventGroupClearBits(s_ntm_event_group, WIFI_ACTIVE_BIT);
+}
+
+bool ntm_has_error() {
+  return xEventGroupGetBits(s_ntm_event_group) & (WIFI_FAIL_BIT | TZ_FAIL_BIT);
 }
 
 bool ntm_is_connected() {
