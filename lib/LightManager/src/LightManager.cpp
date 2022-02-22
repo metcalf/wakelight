@@ -4,8 +4,7 @@
 int cmpHrMin(LightManager::HrMin t1, LightManager::HrMin t2) {
   if (t1.hour == t2.hour && t1.minute == t2.minute) {
     return 0;
-  } else if (t1.hour > t2.hour ||
-             (t1.hour == t2.hour && t1.minute > t2.minute)) {
+  } else if (t1.hour > t2.hour || (t1.hour == t2.hour && t1.minute > t2.minute)) {
     return 1;
   } else {
     return -1;
@@ -18,7 +17,7 @@ LightManager::Next LightManager::update(tm timeinfo) {
   Action after = actions_.front();
   Action curr;
   for (size_t i = 0; i < actions_.size(); i++) {
-    curr = actions_[i];
+    curr = actions_.at(i);
 
     if (cmpHrMin(curr.time, now) == 1) {
       // If this is the first position where `curr` is after the current time,
@@ -38,8 +37,7 @@ LightManager::Next LightManager::update(tm timeinfo) {
   }
 
   return Next{.color = {before.color[0], before.color[1], before.color[2]},
-              .nextUpdateSecs = (uint32_t)((next_update_hrs * 60 +
-                                            (after.time.minute - now.minute)) *
-                                               60 -
-                                           timeinfo.tm_sec)};
+              .nextUpdateSecs =
+                  (uint32_t)((next_update_hrs * 60 + (after.time.minute - now.minute)) * 60 -
+                             timeinfo.tm_sec)};
 }

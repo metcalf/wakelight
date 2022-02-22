@@ -31,8 +31,7 @@ void fade_timer_cb(void *pvParameters) {
     } else {
       duty = s_target_color[i] - s_delta_per_ms[i] * (s_end_ms - now);
     }
-    ESP_ERROR_CHECK(
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i, duty));
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i, duty));
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i));
   }
 
@@ -58,40 +57,48 @@ void light_setup() {
                                           .intr_type = LEDC_INTR_DISABLE,
                                           .timer_sel = LEDC_TIMER_0,
                                           .duty = s_target_color[i],
-                                          .hpoint = 0};
+                                          .hpoint = 0,
+                                          .flags = {}};
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
   }
 
-  s_fade_timer_handle =
-      xTimerCreateStatic("light_fade", pdMS_TO_TICKS(10), pdTRUE, NULL,
-                         fade_timer_cb, &s_fade_timer);
+  s_fade_timer_handle = xTimerCreateStatic("light_fade", pdMS_TO_TICKS(10), pdTRUE, NULL,
+                                           fade_timer_cb, &s_fade_timer);
 }
 
 void light_set_color(uint8_t color[3], size_t fade_ms_per_step) {
   xTimerStop(s_fade_timer_handle, portMAX_DELAY);
 
   uint64_t now = millis64();
-  uint8_t max_delta;
+  uint8_t max_delta = 0;
   for (size_t i = 0; i < 3; i++) {
     uint8_t start_color = ledc_get_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i);
     s_target_color[i] = color[i];
     s_delta_per_ms[i] = (double)((int64_t)s_target_color[i] - start_color);
 
-    max_delta =
-        std::max(max_delta, (uint8_t)abs((int)s_target_color[i] - start_color));
+    max_delta = std::max(max_delta, (uint8_t)abs((int)s_target_color[i] - start_color));
   }
 
   s_end_ms = now + max_delta * fade_ms_per_step;
-  for (size_t i = 0; i < 3; i++) {
-    s_delta_per_ms[i] /= (s_end_ms - now);
+  ESP_LOGI("APP", "setColor: R%03d|G%03d|B%03d now:%llu end:%llu\n", color[0], color[1], color[2],
+           now, s_end_ms);
+
+  if (fade_ms_per_step == 0) {
+    s_end_ms = 0;
+    fade_timer_cb(NULL);
+  } else {
+    for (size_t i = 0; i < 3; i++) {
+      s_delta_per_ms[i] /= (s_end_ms - now);
+    }
+
+    xTimerStart(s_fade_timer_handle, 0);
   }
+}
 
-  ESP_LOGI(
-      "APP",
-      "setColor: R%03d|G%03d|B%03d now:%llu end:%llu s_delta_per_ms[0]:%f\n",
-      color[0], color[1], color[2], now, s_end_ms, s_delta_per_ms[0]);
-
-  xTimerStart(s_fade_timer_handle, 0);
+void light_get_color(uint8_t *color) {
+  for (size_t i = 0; i < 3; i++) {
+    color[i] = s_target_color[i];
+  }
 }
 
 void light_toggle(uint fade_ms_per_step) {
@@ -100,14 +107,11 @@ void light_toggle(uint fade_ms_per_step) {
     is_on = is_on || (s_target_color[i] != 0);
   }
 
-  uint8_t c;
   if (is_on) {
-    c = 0;
+    light_set_color(LIGHT_COLOR_OFF, fade_ms_per_step);
   } else {
-    c = 255;
+    light_set_color(LIGHT_COLOR_ON, fade_ms_per_step);
   }
-  uint8_t color[3]{c, c, c};
-  light_set_color(color, fade_ms_per_step);
 }
 
 bool light_is_fading() { return s_end_ms > 0; }

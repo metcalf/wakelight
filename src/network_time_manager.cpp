@@ -22,7 +22,7 @@
 #define TZ_FAIL_BIT BIT4
 #define CLOCK_UPDATED_BIT BIT5
 
-const char *TAG = "ntm";
+const static char *TAG = "ntm";
 
 static wifi_config_t s_wifi_config = {
     .sta =
@@ -74,13 +74,11 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
     ESP_LOGD(TAG, "HTTP_EVENT_HEADER_SENT");
     break;
   case HTTP_EVENT_ON_HEADER:
-    ESP_LOGD(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key,
-             evt->header_value);
+    ESP_LOGD(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
     break;
   case HTTP_EVENT_ON_DATA: {
     ESP_LOGD(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
-    size_t n = MAX_HTTP_OUTPUT_BUFFER - s_http_output_len -
-               1; // -1 to ensure terminating null byte
+    size_t n = MAX_HTTP_OUTPUT_BUFFER - s_http_output_len - 1; // -1 to ensure terminating null byte
     if (evt->data_len > n) {
       ESP_LOGE(TAG, "HTTP data size exceeded receive buffer");
     } else {
@@ -117,16 +115,14 @@ void tz_fetch_task(void *pvParameters) {
         .path = "/csv",
         .query = "fields=status,message,timezone",
         .event_handler = _http_event_handler,
-        .user_data =
-            s_response_buffer, // Pass address of local buffer to get response
+        .user_data = s_response_buffer, // Pass address of local buffer to get response
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
 
     esp_err_t err = esp_http_client_perform(client);
     if (err == ESP_OK) {
       ESP_LOGI(TAG, "HTTP GET Status = %d, content_length = %d",
-               esp_http_client_get_status_code(client),
-               esp_http_client_get_content_length(client));
+               esp_http_client_get_status_code(client), esp_http_client_get_content_length(client));
     } else {
       ESP_LOGW(TAG, "HTTP GET request failed: %s", esp_err_to_name(err));
     }
@@ -136,8 +132,7 @@ void tz_fetch_task(void *pvParameters) {
     s_response_buffer[s_http_output_len] = 0; // Null-terminate string
 
     if (strncmp("success,", s_response_buffer, 8) == 0) {
-      const char *response_tz =
-          (char *)s_response_buffer + 8; // Advance past 'success,'
+      const char *response_tz = (char *)s_response_buffer + 8; // Advance past 'success,'
       // Replace newline with terminating null byte
       *strchr(response_tz, '\n') = 0;
       const char *posix_str = micro_tz_db_get_posix_str(response_tz);
@@ -164,12 +159,10 @@ void tz_fetch_task(void *pvParameters) {
 }
 
 // TODO: Implement auto-reconnection, periodic retries, etc...
-void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id,
-                   void *event_data) {
+void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
   if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
     esp_wifi_connect();
-  } else if (event_base == WIFI_EVENT &&
-             event_id == WIFI_EVENT_STA_DISCONNECTED) {
+  } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
     xEventGroupClearBits(s_ntm_event_group, WIFI_CONNECTED_BIT);
 
     uint8_t reason = ((wifi_event_sta_disconnected_t *)event_data)->reason;
@@ -183,9 +176,9 @@ void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id,
     if (s_retry_num < MAX_RETRIES) {
       esp_wifi_connect();
       s_retry_num++;
-      ESP_LOGI(TAG, "retry to connect to the AP");
+      ESP_LOGI(TAG, "retrying connection to AP");
     } else {
-      ESP_LOGW(TAG, "connect to the AP fail");
+      ESP_LOGW(TAG, "failed to connect to the AP");
       // TODO: Add periodic retries?
       xEventGroupSetBits(s_ntm_event_group, WIFI_FAIL_BIT);
     }
@@ -211,7 +204,10 @@ void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id,
   }
 }
 
-void ntm_connect() {
+void ntm_connect(const char *network_name, const char *network_pswd) {
+  memcpy(s_wifi_config.sta.ssid, network_name, sizeof(s_wifi_config.sta.ssid));
+  memcpy(s_wifi_config.sta.password, network_pswd, sizeof(s_wifi_config.sta.ssid));
+
   xEventGroupSetBits(s_ntm_event_group, WIFI_ACTIVE_BIT);
 
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
@@ -221,14 +217,9 @@ void ntm_connect() {
   ESP_LOGI(TAG, "wifi_init_sta finished.");
 }
 
-void ntm_init(const char *network_name, const char *network_pswd) {
-  memcpy(s_wifi_config.sta.ssid, network_name, sizeof(s_wifi_config.sta.ssid));
-  memcpy(s_wifi_config.sta.password, network_pswd,
-         sizeof(s_wifi_config.sta.ssid));
-
+void ntm_init() {
   s_ntm_event_group = xEventGroupCreate();
 
-  // TODO: Handle stop/disconnect while task is active
   xTaskCreate(&tz_fetch_task, "tz_fetch_task", 8192, NULL, tskIDLE_PRIORITY + 1,
               &s_tz_fetch_task_handle);
 
@@ -240,10 +231,10 @@ void ntm_init(const char *network_name, const char *network_pswd) {
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-  ESP_ERROR_CHECK(esp_event_handler_instance_register(
-      WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL, NULL));
-  ESP_ERROR_CHECK(esp_event_handler_instance_register(
-      IP_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL, NULL));
+  ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler,
+                                                      NULL, NULL));
+  ESP_ERROR_CHECK(
+      esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL, NULL));
 
   sntp_setoperatingmode(SNTP_OPMODE_POLL);
   sntp_setservername(0, "pool.ntp.org");
@@ -258,17 +249,12 @@ bool ntm_has_error() {
   return xEventGroupGetBits(s_ntm_event_group) & (WIFI_FAIL_BIT | TZ_FAIL_BIT);
 }
 
-bool ntm_is_connected() {
-  return xEventGroupGetBits(s_ntm_event_group) & WIFI_CONNECTED_BIT;
-}
+bool ntm_is_connected() { return xEventGroupGetBits(s_ntm_event_group) & WIFI_CONNECTED_BIT; }
 
-bool ntm_is_active() {
-  return xEventGroupGetBits(s_ntm_event_group) & WIFI_ACTIVE_BIT;
-}
+bool ntm_is_active() { return xEventGroupGetBits(s_ntm_event_group) & WIFI_ACTIVE_BIT; }
 
 bool ntm_poll_clock_updated() {
-  return xEventGroupClearBits(s_ntm_event_group, CLOCK_UPDATED_BIT) &
-         CLOCK_UPDATED_BIT;
+  return xEventGroupClearBits(s_ntm_event_group, CLOCK_UPDATED_BIT) & CLOCK_UPDATED_BIT;
 }
 
 bool ntm_get_local_time(struct tm *info) {

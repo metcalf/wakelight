@@ -21,10 +21,10 @@ public:
   };
 
   // actions must be in ascending order by time
-  LightManager(std::vector<Action> actions) : actions_(actions){};
+  LightManager(std::vector<Action> &actions) : actions_(actions){};
 
   Next update(tm timeinfo);
 
 private:
-  std::vector<Action> actions_;
+  std::vector<Action> &actions_;
 };

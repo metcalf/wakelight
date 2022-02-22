@@ -13,12 +13,15 @@
 
 #include <algorithm>
 #include <iterator>
+#include <string.h>
 #include <vector>
 
 #include "Button.h"
 #include "Dotstar.h"
 #include "LightManager.h"
 #include "Power.h"
+#include "app_config.h"
+#include "bt.h"
 #include "helpers.h"
 #include "light.h"
 #include "network_time_manager.h"
@@ -27,23 +30,16 @@
 #define ACTION_FADE_MS_PER_STEP 705 // ~3m (1000 * 60 * 3 / 255)
 #define BUTTON_FADE_MS_PER_STEP 4   // ~1 second
 #define BUTTON_HOLD_MS 5 * 1000
+#define ERROR_SLEEP_DURATION_S 60 * 30
+#define WAKE_ON_MINS 60
 
 #define BUTTON_GPIO GPIO_NUM_4
 
-std::vector<LightManager::Action> actions = {
-    // Prewake
-    // LightManager::Action{LightManager::HrMin{.hour = 6, .minute = 25},
-    //                      {255, 0, 0}},
-    // Wake
-    LightManager::Action{LightManager::HrMin{.hour = 6, .minute = 30},
-                         {255, 160, 0}},
-    // Wake off
-    LightManager::Action{LightManager::HrMin{.hour = 7, .minute = 30},
-                         {0, 0, 0}},
-    // Nightlight
-    LightManager::Action{LightManager::HrMin{.hour = 18, .minute = 45},
-                         {40, 32, 25}},
-};
+// Config
+std::vector<LightManager::Action> actions;
+char wifi_ssid[APP_CONFIG_WIFI_SSID_SIZE];
+char wifi_pswd[APP_CONFIG_WIFI_PSWD_SIZE];
+
 LightManager lightManager(actions);
 Button button(BUTTON_GPIO, BUTTON_HOLD_MS);
 Dotstar dotstar;
@@ -51,20 +47,127 @@ Power power;
 
 uint64_t nextLightUpdateMillis;
 uint8_t lastUpdateColor[3];
+bool btWroteColor;
+
+char light_access_buf[12];
+char wake_time_access_buf[6];
+
+// TODO: Write tests for this
+size_t strSplit(const char *str, size_t strN, uint8_t *dest, size_t destN, char delim) {
+  size_t resultN = 0;
+
+  char *end = (char *)str + strN;
+  char *start = (char *)str;
+  for (size_t i = 0; i < destN; i++) {
+    char *resultEnd = NULL;
+    char *nextStart = std::find(start, end, delim);
+
+    // TODO: Should probably handle errno here
+    unsigned long result = strtoul(start, &resultEnd, 10);
+    if ((resultEnd == NULL ||    // Consumed everything up to EOS
+         resultEnd == nextStart) // or to the next delimeter
+        && result <= 255         // Result is in range
+    ) {
+      dest[i] = result;
+      resultN++;
+    }
+
+    if (nextStart == end) {
+      break; // Searched to the end of the string
+    }
+    start = nextStart + 1;
+  }
+
+  return resultN;
+}
+
+int strAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
+  switch (op) {
+  case BtOp::REQUEST_READ:
+    *bytes = strnlen(chr->buffer, chr->bufferSize + 1);
+    break;
+  case BtOp::WRITTEN:
+    chr->buffer[*bytes] = 0;
+    break;
+  }
+
+  return 0;
+}
+
+int colorAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
+  uint8_t color[3];
+  switch (op) {
+  case BtOp::REQUEST_READ:
+    light_get_color(color);
+    *bytes = snprintf(chr->buffer, chr->bufferSize, "%03d:%03d:%03d", color[0], color[1], color[2]);
+    break;
+  case BtOp::WRITTEN:
+    chr->buffer[*bytes] = 0;
+    size_t resultN = strSplit(chr->buffer, *bytes, color, sizeof(color), ':');
+    if (resultN != sizeof(color)) {
+      ESP_LOGE("APP", "Invalid color string: %s", chr->buffer);
+      return 1;
+    }
+
+    light_set_color(color, BUTTON_FADE_MS_PER_STEP);
+    btWroteColor = true;
+
+    break;
+  }
+
+  return 0;
+}
+
+int wakeTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
+  LightManager::HrMin *wake = &actions[0].time;
+  switch (op) {
+  case BtOp::REQUEST_READ:
+    *bytes = snprintf(chr->buffer, chr->bufferSize, "%02d:%02d", actions[0].time.hour,
+                      actions[0].time.minute);
+    break;
+  case BtOp::WRITTEN:
+    chr->buffer[*bytes] = 0;
+    LightManager::HrMin *off = &actions[1].time;
+    uint8_t result[2];
+
+    size_t resultN = strSplit(chr->buffer, *bytes, result, sizeof(result), ':');
+    if (resultN != sizeof(result) || result[0] >= 12 || result[1] >= 60) {
+      ESP_LOGE("APP", "Invalid time string: %s", chr->buffer);
+      return 1;
+    }
+
+    wake->hour = result[0];
+    wake->minute = result[1];
+
+    off->hour = wake->hour;
+    off->minute = wake->minute + WAKE_ON_MINS;
+    if (off->minute >= 60) {
+      off->hour++;
+      off->minute -= 60;
+    }
+
+    ESP_LOGI("APP", "Set wake %02d:%02d, off %02d:%02d", wake->hour, wake->minute, off->hour,
+             off->minute);
+
+    break;
+  }
+
+  return 0;
+}
 
 // TODO: Handle race between this and button press
 void enterSleep(uint64_t sleep_time_ms) {
   ESP_LOGI("APP", "Going to sleep");
 
   dotstar.setPower(false);
-  // TODO: Stop BLE on sleep once we implement it
+
+  bt_stop();
   ntm_disconnect();
 
   ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(BUTTON_GPIO, 0));
   ESP_ERROR_CHECK(rtc_gpio_pullup_en(BUTTON_GPIO));
   // EXT1 uses a GPIO bitmask instead of the raw GPIO number
-  ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup(1ULL << PWR_SENSE_GPIO,
-                                               ESP_EXT1_WAKEUP_ANY_HIGH));
+  ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup(1ULL << PWR_SENSE_GPIO, ESP_EXT1_WAKEUP_ANY_HIGH));
   ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(sleep_time_ms * 1000));
 
   // TODO: Just using light sleep for now because for some reason
@@ -79,6 +182,24 @@ void enterSleep(uint64_t sleep_time_ms) {
   // }
 }
 
+uint64_t getNextSleepTime() {
+  struct tm timeinfo;
+
+  if (button.isActive() || light_is_fading() || bt_is_enabled()) {
+    return 0;
+  }
+  if (ntm_get_local_time(&timeinfo)) {
+    return nextLightUpdateMillis - millis64();
+  }
+  // If we haven't gotten the time for the first time, don't sleep unless we end
+  // up in an error state. This effectively implements retries on the network logic
+  // since it restarts on wake.
+  if (ntm_has_error()) {
+    return ERROR_SLEEP_DURATION_S * 1000;
+  }
+  return 0;
+}
+
 void loop() {
   struct tm timeinfo;
   LightManager::Next update;
@@ -88,9 +209,8 @@ void loop() {
   if (nextLightUpdateMillis < millis64() || ntm_poll_clock_updated()) {
     if (ntm_get_local_time(&timeinfo)) {
       update = lightManager.update(timeinfo);
-      ESP_LOGI("APP", "%02d:%02d R%03d|G%03d|B%03d next: %d\r\n",
-               timeinfo.tm_hour, timeinfo.tm_min, update.color[0],
-               update.color[1], update.color[2], update.nextUpdateSecs);
+      ESP_LOGI("APP", "%02d:%02d R%03d|G%03d|B%03d next: %d\r\n", timeinfo.tm_hour, timeinfo.tm_min,
+               update.color[0], update.color[1], update.color[2], update.nextUpdateSecs);
 
       if (!std::equal(std::begin(lastUpdateColor), std::end(lastUpdateColor),
                       std::begin(update.color))) {
@@ -103,8 +223,7 @@ void loop() {
       nextLightUpdateMillis = millis64() + update.nextUpdateSecs * 1000;
     } else {
       ESP_LOGI("APP", "Awaiting time...");
-      nextLightUpdateMillis =
-          millis64() + 1000; // Check the time again in a second
+      nextLightUpdateMillis = millis64() + 1000; // Check the time again in a second
     }
   }
 
@@ -112,10 +231,26 @@ void loop() {
   switch (buttonReason) {
   case Button::CallbackReason::PRESS_RELEASE:
     ESP_LOGI("APP", "Button: PRESS_RELEASE");
-    light_toggle(BUTTON_FADE_MS_PER_STEP);
+    if (bt_is_enabled()) {
+      bt_stop();
+      // TODO: There's probably a gentler way to reset this, plus we could only reset if
+      // something changes.
+      ntm_disconnect();
+      ntm_connect(wifi_ssid, wifi_pswd);
+      nextLightUpdateMillis = 0; // Force an update in case things have changed
+      if (!btWroteColor) {
+        light_set_color(LIGHT_COLOR_OFF, 0);
+      }
+    } else {
+      light_toggle(BUTTON_FADE_MS_PER_STEP);
+    }
     break;
   case Button::CallbackReason::HOLD_START:
     ESP_LOGI("APP", "Button: HOLD_START");
+    btWroteColor = false;
+    bt_start();
+    light_set_color(LIGHT_COLOR_BLUE, 0);
+
     break;
   case Button::CallbackReason::HOLD_REPEAT:
     ESP_LOGI("APP", "Button: HOLD_REPEAT");
@@ -130,7 +265,7 @@ void loop() {
   if (power.isPowered()) {
     // If WiFi is disabled (e.g. after sleep), re-enable it so we can fetch time
     if (!ntm_is_active()) {
-      ntm_connect();
+      ntm_connect(wifi_ssid, wifi_pswd);
     }
 
     uint8_t color[3]{0, 0, 0};
@@ -148,9 +283,9 @@ void loop() {
     uint8_t color[3]{10, 0, 0};
     dotstar.setColor(color);
 
-    if (!button.isActive() && !light_is_fading() && nextLightUpdateMillis > 0) {
-      // TODO: Add some logic for periodic clock updates (may not be necessary)
-      enterSleep((nextLightUpdateMillis - millis64()));
+    uint64_t nextSleepTime = getNextSleepTime();
+    if (nextSleepTime > 0) {
+      enterSleep(nextSleepTime);
     }
   }
 }
@@ -164,8 +299,7 @@ extern "C" void app_main() {
 
   //Initialize NVS
   esp_err_t ret = nvs_flash_init();
-  if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
-      ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
     ESP_ERROR_CHECK(nvs_flash_erase());
     ret = nvs_flash_init();
   }
@@ -186,11 +320,41 @@ extern "C" void app_main() {
   // press debounce routine.
   button.setup(wakeup_reason == ESP_SLEEP_WAKEUP_EXT0);
 
+  ESP_LOGI("APP", "Loading config");
+  config_load(actions, wifi_ssid, wifi_pswd);
+  ESP_LOGI("APP", "Loaded SSID: %s Pass: %s Wake time: %02d:%02d", wifi_ssid, wifi_pswd,
+           actions[0].time.hour, actions[0].time.minute);
+
   ESP_LOGI("APP", "Configuring LEDs");
   light_setup();
 
   ESP_LOGI("APP", "Initializing network time manager");
-  ntm_init(hardcoded_network_name, hardcoded_network_pswd);
+  ntm_init();
+
+  bt_register(bt_chr{.name = "wifi ssid",
+                     .buffer = wifi_ssid,
+                     .bufferSize = sizeof(wifi_ssid) - 1, // Ensure space for null termination
+                     .readable = true,
+                     .writable = true,
+                     .access_cb = strAccessCb});
+  bt_register(bt_chr{.name = "wifi pass",
+                     .buffer = wifi_pswd,
+                     .bufferSize = sizeof(wifi_pswd) - 1, // Ensure space for null termination
+                     .readable = false,
+                     .writable = true,
+                     .access_cb = strAccessCb});
+  bt_register(bt_chr{.name = "current light",
+                     .buffer = light_access_buf,
+                     .bufferSize = sizeof(light_access_buf),
+                     .readable = true,
+                     .writable = true,
+                     .access_cb = colorAccessCb});
+  bt_register(bt_chr{.name = "wake time",
+                     .buffer = wake_time_access_buf,
+                     .bufferSize = sizeof(wake_time_access_buf),
+                     .readable = true,
+                     .writable = true,
+                     .access_cb = wakeTimeAccessCb});
 
   while (1) {
     esp_task_wdt_reset();
