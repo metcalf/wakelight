@@ -94,6 +94,24 @@ int strAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
   return 0;
 }
 
+int wifiSsidAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
+  int ret = strAccessCb(bytes, chr, op);
+  if (op == BtOp::WRITTEN) {
+    config_set_ssid(wifi_ssid);
+  }
+
+  return ret;
+}
+
+int wifiPswdAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
+  int ret = strAccessCb(bytes, chr, op);
+  if (op == BtOp::WRITTEN) {
+    config_set_pswd(wifi_pswd);
+  }
+
+  return ret;
+}
+
 int colorAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
   uint8_t color[3];
   switch (op) {
@@ -110,7 +128,12 @@ int colorAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
     }
 
     light_set_color(color, BUTTON_FADE_MS_PER_STEP);
+    for (size_t i = 0; i < sizeof(color); i++) {
+      actions.at(2).color[i] = color[i];
+    }
+
     btWroteColor = true;
+    config_set_actions(actions);
 
     break;
   }
@@ -146,6 +169,7 @@ int wakeTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
       off->minute -= 60;
     }
 
+    config_set_actions(actions);
     ESP_LOGI("APP", "Set wake %02d:%02d, off %02d:%02d", wake->hour, wake->minute, off->hour,
              off->minute);
 
@@ -336,13 +360,13 @@ extern "C" void app_main() {
                      .bufferSize = sizeof(wifi_ssid) - 1, // Ensure space for null termination
                      .readable = true,
                      .writable = true,
-                     .access_cb = strAccessCb});
+                     .access_cb = wifiSsidAccessCb});
   bt_register(bt_chr{.name = "wifi pass",
                      .buffer = wifi_pswd,
                      .bufferSize = sizeof(wifi_pswd) - 1, // Ensure space for null termination
                      .readable = false,
                      .writable = true,
-                     .access_cb = strAccessCb});
+                     .access_cb = wifiPswdAccessCb});
   bt_register(bt_chr{.name = "current light",
                      .buffer = light_access_buf,
                      .bufferSize = sizeof(light_access_buf),

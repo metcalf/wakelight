@@ -5,7 +5,7 @@
 
 static uint8_t LIGHT_COLOR_BLUE[3]{0, 0, 255};
 static uint8_t LIGHT_COLOR_OFF[3]{0, 0, 0};
-static uint8_t LIGHT_COLOR_ON[3]{40, 32, 25};
+static uint8_t LIGHT_COLOR_ON[3]{60, 48, 38};
 
 void light_setup();
 
