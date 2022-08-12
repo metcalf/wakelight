@@ -8,7 +8,7 @@
 #include "light.h"
 #include "wifi_credentials.h"
 
-#define NVS_CONFIG_VERSION 3
+#define NVS_CONFIG_VERSION 4
 #define STORAGE_NAMESPACE "config"
 
 const static char *TAG = "ntm";
@@ -18,12 +18,14 @@ static std::vector<LightManager::Action> default_actions = {
     // LightManager::Action{LightManager::HrMin{.hour = 6, .minute = 25},
     //                      {255, 0, 0}},
     // Wake
-    LightManager::Action{LightManager::HrMin{.hour = 6, .minute = 30}, {30, 90, 0}},
+    LightManager::Action{LightManager::HrMin{.hour = 7, .minute = 00}, {30, 90, 0}},
     // Wake off
-    LightManager::Action{LightManager::HrMin{.hour = 7, .minute = 30}, {0, 0, 0}},
-    // Nightlight
-    LightManager::Action{LightManager::HrMin{.hour = 18, .minute = 45},
+    LightManager::Action{LightManager::HrMin{.hour = 8, .minute = 00}, {0, 0, 0}},
+    // Pre-sleep
+    LightManager::Action{LightManager::HrMin{.hour = 19, .minute = 00},
                          {LIGHT_COLOR_ON[0], LIGHT_COLOR_ON[1], LIGHT_COLOR_ON[2]}},
+    // Sleep
+    LightManager::Action{LightManager::HrMin{.hour = 20, .minute = 00}, {255, 25, 20}},
 };
 
 bool config_load_internal(nvs_handle_t handle, std::vector<LightManager::Action> &actions,

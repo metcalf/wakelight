@@ -27,11 +27,12 @@
 #include "network_time_manager.h"
 #include "wifi_credentials.h"
 
-#define ACTION_FADE_MS_PER_STEP 705 // ~3m (1000 * 60 * 3 / 255)
+#define ACTION_FADE_MS_PER_STEP 118 // ~30s (1000 * 30 / 255)
 #define BUTTON_FADE_MS_PER_STEP 4   // ~1 second
 #define BUTTON_HOLD_MS 5 * 1000
 #define ERROR_SLEEP_DURATION_S 60 * 30
 #define WAKE_ON_MINS 60
+#define PRESLEEP_MINS 60
 
 #define BUTTON_GPIO GPIO_NUM_4
 
@@ -49,8 +50,8 @@ uint64_t nextLightUpdateMillis;
 uint8_t lastUpdateColor[3];
 bool btWroteColor;
 
-char light_access_buf[12];
-char wake_time_access_buf[6];
+char color_access_buf[12];
+char time_access_buf[6];
 
 // TODO: Write tests for this
 size_t strSplit(const char *str, size_t strN, uint8_t *dest, size_t destN, char delim) {
@@ -141,39 +142,68 @@ int colorAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
   return 0;
 }
 
-int wakeTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
-  LightManager::HrMin *wake = &actions[0].time;
+int timeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op, LightManager::HrMin *target) {
   switch (op) {
   case BtOp::REQUEST_READ:
-    *bytes = snprintf(chr->buffer, chr->bufferSize, "%02d:%02d", actions[0].time.hour,
-                      actions[0].time.minute);
+    *bytes = snprintf(chr->buffer, chr->bufferSize, "%02d:%02d", target->hour, target->minute);
     break;
   case BtOp::WRITTEN:
     chr->buffer[*bytes] = 0;
-    LightManager::HrMin *off = &actions[1].time;
     uint8_t result[2];
 
     size_t resultN = strSplit(chr->buffer, *bytes, result, sizeof(result), ':');
-    if (resultN != sizeof(result) || result[0] >= 12 || result[1] >= 60) {
+    if (resultN != sizeof(result) || result[0] >= 24 || result[1] >= 60) {
       ESP_LOGE("APP", "Invalid time string: %s", chr->buffer);
       return 1;
     }
 
-    wake->hour = result[0];
-    wake->minute = result[1];
+    target->hour = result[0];
+    target->minute = result[1];
+  }
 
-    off->hour = wake->hour;
-    off->minute = wake->minute + WAKE_ON_MINS;
-    if (off->minute >= 60) {
-      off->hour++;
-      off->minute -= 60;
-    }
+  return 0;
+}
+
+void setNextTime(LightManager::HrMin *time, LightManager::HrMin *next, int incr_mins) {
+  next->hour = time->hour;
+  next->minute = time->minute + incr_mins;
+  if (next->minute >= 60) {
+    next->hour++;
+    next->minute -= 60;
+  }
+}
+
+int presleepTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
+  LightManager::HrMin *presleep = &actions[2].time;
+
+  if (timeAccessCb(bytes, chr, op, presleep) != 0) {
+    return 1;
+  }
+  if (op == BtOp::WRITTEN) {
+    LightManager::HrMin *sleep = &actions[3].time;
+    setNextTime(presleep, sleep, PRESLEEP_MINS);
+
+    config_set_actions(actions);
+    ESP_LOGI("APP", "Set presleep %02d:%02d, sleep %02d:%02d", presleep->hour, presleep->minute,
+             sleep->hour, sleep->minute);
+  }
+
+  return 0;
+}
+
+int wakeTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
+  LightManager::HrMin *wake = &actions[0].time;
+
+  if (timeAccessCb(bytes, chr, op, wake) != 0) {
+    return 1;
+  }
+  if (op == BtOp::WRITTEN) {
+    LightManager::HrMin *off = &actions[1].time;
+    setNextTime(wake, off, WAKE_ON_MINS);
 
     config_set_actions(actions);
     ESP_LOGI("APP", "Set wake %02d:%02d, off %02d:%02d", wake->hour, wake->minute, off->hour,
              off->minute);
-
-    break;
   }
 
   return 0;
@@ -368,17 +398,23 @@ extern "C" void app_main() {
                      .writable = true,
                      .access_cb = wifiPswdAccessCb});
   bt_register(bt_chr{.name = "current light",
-                     .buffer = light_access_buf,
-                     .bufferSize = sizeof(light_access_buf),
+                     .buffer = color_access_buf,
+                     .bufferSize = sizeof(color_access_buf),
                      .readable = true,
                      .writable = true,
                      .access_cb = colorAccessCb});
   bt_register(bt_chr{.name = "wake time",
-                     .buffer = wake_time_access_buf,
-                     .bufferSize = sizeof(wake_time_access_buf),
+                     .buffer = time_access_buf,
+                     .bufferSize = sizeof(time_access_buf),
                      .readable = true,
                      .writable = true,
                      .access_cb = wakeTimeAccessCb});
+  bt_register(bt_chr{.name = "sleep time",
+                     .buffer = time_access_buf,
+                     .bufferSize = sizeof(time_access_buf),
+                     .readable = true,
+                     .writable = true,
+                     .access_cb = presleepTimeAccessCb});
 
   while (1) {
     esp_task_wdt_reset();
