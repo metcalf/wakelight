@@ -32,6 +32,7 @@
 #define BUTTON_HOLD_MS 5 * 1000
 #define ERROR_SLEEP_DURATION_S 60 * 30
 #define WAKE_ON_MINS 60
+#define NAP_MINS 90
 #define PRESLEEP_MINS 60
 
 #define BUTTON_GPIO GPIO_NUM_4
@@ -130,7 +131,7 @@ int colorAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
 
     light_set_color(color, BUTTON_FADE_MS_PER_STEP);
     for (size_t i = 0; i < sizeof(color); i++) {
-      actions.at(2).color[i] = color[i];
+      (*actions.at(2).color)[i] = color[i];
     }
 
     btWroteColor = true;
@@ -174,7 +175,7 @@ void setNextTime(LightManager::HrMin *time, LightManager::HrMin *next, int incr_
 }
 
 int presleepTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
-  LightManager::HrMin *presleep = &actions[2].time;
+  LightManager::HrMin *presleep = &actions[5].time;
 
   if (timeAccessCb(bytes, chr, op, presleep) != 0) {
     return 1;
@@ -186,6 +187,27 @@ int presleepTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
     config_set_actions(actions);
     ESP_LOGI("APP", "Set presleep %02d:%02d, sleep %02d:%02d", presleep->hour, presleep->minute,
              sleep->hour, sleep->minute);
+  }
+
+  return 0;
+}
+
+int napTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
+  LightManager::HrMin *nap = &actions[2].time;
+
+  if (timeAccessCb(bytes, chr, op, nap) != 0) {
+    return 1;
+  }
+  if (op == BtOp::WRITTEN) {
+    LightManager::HrMin *wake = &actions[3].time;
+    LightManager::HrMin *off = &actions[4].time;
+
+    setNextTime(nap, wake, NAP_MINS);
+    setNextTime(wake, off, WAKE_ON_MINS);
+
+    config_set_actions(actions);
+    ESP_LOGI("APP", "Set nap %02d:%02d, wake %02d:%02d, off %02d:%02d", nap->hour, nap->minute,
+             wake->hour, wake->minute, off->hour, off->minute);
   }
 
   return 0;
@@ -264,14 +286,13 @@ void loop() {
     if (ntm_get_local_time(&timeinfo)) {
       update = lightManager.update(timeinfo);
       ESP_LOGI("APP", "%02d:%02d R%03d|G%03d|B%03d next: %d\r\n", timeinfo.tm_hour, timeinfo.tm_min,
-               update.color[0], update.color[1], update.color[2], update.nextUpdateSecs);
+               (*update.color)[0], (*update.color)[1], (*update.color)[2], update.nextUpdateSecs);
 
-      if (!std::equal(std::begin(lastUpdateColor), std::end(lastUpdateColor),
-                      std::begin(update.color))) {
+      if (!std::equal(lastUpdateColor, std::end(lastUpdateColor), *update.color)) {
         for (size_t i = 0; i < 3; i++) {
-          lastUpdateColor[i] = update.color[i];
+          lastUpdateColor[i] = (*update.color)[i];
         }
-        light_set_color(update.color, ACTION_FADE_MS_PER_STEP);
+        light_set_color(*update.color, ACTION_FADE_MS_PER_STEP);
       }
 
       nextLightUpdateMillis = millis64() + update.nextUpdateSecs * 1000;
@@ -409,6 +430,12 @@ extern "C" void app_main() {
                      .readable = true,
                      .writable = true,
                      .access_cb = wakeTimeAccessCb});
+  bt_register(bt_chr{.name = "sleep time",
+                     .buffer = time_access_buf,
+                     .bufferSize = sizeof(time_access_buf),
+                     .readable = true,
+                     .writable = true,
+                     .access_cb = napTimeAccessCb});
   bt_register(bt_chr{.name = "sleep time",
                      .buffer = time_access_buf,
                      .bufferSize = sizeof(time_access_buf),

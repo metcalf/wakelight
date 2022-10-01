@@ -110,7 +110,7 @@ void light_toggle(uint fade_ms_per_step) {
   if (is_on) {
     light_set_color(LIGHT_COLOR_OFF, fade_ms_per_step);
   } else {
-    light_set_color(LIGHT_COLOR_ON, fade_ms_per_step);
+    light_set_color(LIGHT_COLOR_WHITE, fade_ms_per_step);
   }
 }
 

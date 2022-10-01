@@ -12,11 +12,11 @@ public:
 
   struct Action {
     HrMin time;
-    uint8_t color[3];
+    uint8_t *color[3];
   };
 
   struct Next {
-    uint8_t color[3];
+    uint8_t *color[3];
     uint32_t nextUpdateSecs;
   };
 
