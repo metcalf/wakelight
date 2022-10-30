@@ -14,6 +14,6 @@ void light_setup();
 void light_set_color(uint8_t color[3], size_t fade_ms_per_step);
 void light_get_color(uint8_t *color);
 
-void light_toggle(size_t fade_ms_per_step);
+void light_toggle(size_t fade_ms_per_step, uint8_t last_update_color[3]);
 
 bool light_is_fading();

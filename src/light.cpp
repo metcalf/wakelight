@@ -20,6 +20,15 @@ static double s_delta_per_ms[3];
 static StaticTimer_t s_fade_timer;
 static TimerHandle_t s_fade_timer_handle;
 
+bool is_on(uint8_t color[3]) {
+  for (size_t i = 0; i < 3; i++) {
+    if (color[i] != 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void fade_timer_cb(void *pvParameters) {
   uint64_t now = millis64();
   bool done = now >= s_end_ms;
@@ -101,17 +110,19 @@ void light_get_color(uint8_t *color) {
   }
 }
 
-void light_toggle(uint fade_ms_per_step) {
-  bool is_on = false;
-  for (size_t i = 0; i < 3; i++) {
-    is_on = is_on || (s_target_color[i] != 0);
-  }
+void light_toggle(uint fade_ms_per_step, uint8_t last_update_color[3]) {
+  uint8_t *next_color;
 
-  if (is_on) {
-    light_set_color(LIGHT_COLOR_OFF, fade_ms_per_step);
+  if (is_on(s_target_color)) {
+    next_color = LIGHT_COLOR_OFF;
   } else {
-    light_set_color(LIGHT_COLOR_WHITE, fade_ms_per_step);
+    if (is_on(last_update_color)) {
+      next_color = last_update_color;
+    } else {
+      next_color = LIGHT_COLOR_WHITE;
+    }
   }
+  light_set_color(next_color, fade_ms_per_step);
 }
 
 bool light_is_fading() { return s_end_ms > 0; }

@@ -314,10 +314,10 @@ void loop() {
       ntm_connect(wifi_ssid, wifi_pswd);
       nextLightUpdateMillis = 0; // Force an update in case things have changed
       if (!btWroteColor) {
-        light_set_color(LIGHT_COLOR_OFF, 0);
+        light_set_color(lastUpdateColor, 0);
       }
     } else {
-      light_toggle(BUTTON_FADE_MS_PER_STEP);
+      light_toggle(BUTTON_FADE_MS_PER_STEP, lastUpdateColor);
     }
     break;
   case Button::CallbackReason::HOLD_START:
