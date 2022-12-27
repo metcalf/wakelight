@@ -8,7 +8,7 @@
 #include "light.h"
 #include "wifi_credentials.h"
 
-#define NVS_CONFIG_VERSION 5
+#define NVS_CONFIG_VERSION 7
 #define STORAGE_NAMESPACE "config"
 
 const static char *TAG = "ntm";

@@ -35,6 +35,14 @@
 #define NAP_MINS 90
 #define PRESLEEP_MINS 60
 
+#define WAKE_IDX 0
+#define WAKE_OFF_IDX WAKE_IDX + 1
+#define NAP_IDX WAKE_OFF_IDX + 1
+#define NAP_WAKE_IDX NAP_IDX + 1
+#define NAP_OFF_IDX NAP_WAKE_IDX + 1
+#define PRESLEEP_IDX NAP_OFF_IDX + 1
+#define SLEEP_IDX PRESLEEP_IDX + 1
+
 #define BUTTON_GPIO GPIO_NUM_4
 
 // Config
@@ -131,7 +139,7 @@ int colorAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
 
     light_set_color(color, BUTTON_FADE_MS_PER_STEP);
     for (size_t i = 0; i < sizeof(color); i++) {
-      (*actions.at(2).color)[i] = color[i];
+      (*actions.at(PRESLEEP_IDX).color)[i] = color[i];
     }
 
     btWroteColor = true;
@@ -175,13 +183,13 @@ void setNextTime(LightManager::HrMin *time, LightManager::HrMin *next, int incr_
 }
 
 int presleepTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
-  LightManager::HrMin *presleep = &actions[5].time;
+  LightManager::HrMin *presleep = &actions[PRESLEEP_IDX].time;
 
   if (timeAccessCb(bytes, chr, op, presleep) != 0) {
     return 1;
   }
   if (op == BtOp::WRITTEN) {
-    LightManager::HrMin *sleep = &actions[3].time;
+    LightManager::HrMin *sleep = &actions[SLEEP_IDX].time;
     setNextTime(presleep, sleep, PRESLEEP_MINS);
 
     config_set_actions(actions);
@@ -193,14 +201,14 @@ int presleepTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
 }
 
 int napTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
-  LightManager::HrMin *nap = &actions[2].time;
+  LightManager::HrMin *nap = &actions[NAP_IDX].time;
 
   if (timeAccessCb(bytes, chr, op, nap) != 0) {
     return 1;
   }
   if (op == BtOp::WRITTEN) {
-    LightManager::HrMin *wake = &actions[3].time;
-    LightManager::HrMin *off = &actions[4].time;
+    LightManager::HrMin *wake = &actions[NAP_WAKE_IDX].time;
+    LightManager::HrMin *off = &actions[NAP_OFF_IDX].time;
 
     setNextTime(nap, wake, NAP_MINS);
     setNextTime(wake, off, WAKE_ON_MINS);
@@ -214,13 +222,13 @@ int napTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
 }
 
 int wakeTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
-  LightManager::HrMin *wake = &actions[0].time;
+  LightManager::HrMin *wake = &actions[WAKE_IDX].time;
 
   if (timeAccessCb(bytes, chr, op, wake) != 0) {
     return 1;
   }
   if (op == BtOp::WRITTEN) {
-    LightManager::HrMin *off = &actions[1].time;
+    LightManager::HrMin *off = &actions[WAKE_OFF_IDX].time;
     setNextTime(wake, off, WAKE_ON_MINS);
 
     config_set_actions(actions);
@@ -398,7 +406,7 @@ extern "C" void app_main() {
   ESP_LOGI("APP", "Loading config");
   config_load(actions, wifi_ssid, wifi_pswd);
   ESP_LOGI("APP", "Loaded SSID: %s Pass: %s Wake time: %02d:%02d", wifi_ssid, wifi_pswd,
-           actions[0].time.hour, actions[0].time.minute);
+           actions[WAKE_IDX].time.hour, actions[WAKE_IDX].time.minute);
 
   ESP_LOGI("APP", "Configuring LEDs");
   light_setup();
@@ -430,7 +438,7 @@ extern "C" void app_main() {
                      .readable = true,
                      .writable = true,
                      .access_cb = wakeTimeAccessCb});
-  bt_register(bt_chr{.name = "sleep time",
+  bt_register(bt_chr{.name = "nap time",
                      .buffer = time_access_buf,
                      .bufferSize = sizeof(time_access_buf),
                      .readable = true,
