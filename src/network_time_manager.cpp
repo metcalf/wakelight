@@ -91,6 +91,15 @@ esp_err_t ntm_http_event_handler(esp_http_client_event_t *evt) {
   return ESP_OK;
 }
 
+void ntm_set_posix_tz(const char *posix_str) {
+  setenv("TZ", posix_str, 1);
+  tzset();
+
+  xEventGroupSetBits(s_ntm_event_group, TZ_READY_BIT);
+  xEventGroupSetBits(s_ntm_event_group, CLOCK_UPDATED_BIT);
+  xEventGroupClearBits(s_ntm_event_group, TZ_FAIL_BIT);
+}
+
 void ntm_tz_fetch_task(void *pvParameters) {
   while (1) {
     xTaskNotifyWaitIndexed(0, 0, ULONG_MAX, NULL, portMAX_DELAY);
@@ -134,12 +143,7 @@ void ntm_tz_fetch_task(void *pvParameters) {
         xEventGroupSetBits(s_ntm_event_group, TZ_FAIL_BIT);
       } else {
         ESP_LOGI(TAG, "Setting TZ=%s for zone %s", posix_str, response_tz);
-        setenv("TZ", posix_str, 1);
-        tzset();
-
-        xEventGroupSetBits(s_ntm_event_group, TZ_READY_BIT);
-        xEventGroupSetBits(s_ntm_event_group, CLOCK_UPDATED_BIT);
-        xEventGroupClearBits(s_ntm_event_group, TZ_FAIL_BIT);
+        ntm_set_posix_tz(posix_str);
       }
     } else {
       ESP_LOGE(TAG, "Error fetching timezone from IP: %s", s_response_buffer);
@@ -239,6 +243,17 @@ void ntm_init() {
 void ntm_disconnect() {
   ESP_ERROR_CHECK(esp_wifi_stop());
   xEventGroupClearBits(s_ntm_event_group, WIFI_ACTIVE_BIT);
+}
+
+void ntm_set_offline_time(time_t hour, time_t min) {
+  ntm_set_posix_tz("UTC");
+
+  const timeval tv = timeval{.tv_sec = (hour * 60 + min) * 60};
+
+  settimeofday(&tv, NULL);
+  ESP_LOGI(TAG, "time set manually");
+
+  xEventGroupSetBits(s_ntm_event_group, CLOCK_UPDATED_BIT);
 }
 
 bool ntm_has_error() {

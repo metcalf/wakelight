@@ -63,7 +63,7 @@ char color_access_buf[12];
 char time_access_buf[6];
 
 // TODO: Write tests for this
-size_t strSplit(const char *str, size_t strN, uint8_t *dest, size_t destN, char delim) {
+size_t strSplitToUL(const char *str, size_t strN, uint8_t *dest, size_t destN, char delim) {
   size_t resultN = 0;
 
   char *end = (char *)str + strN;
@@ -131,7 +131,7 @@ int colorAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
     break;
   case BtOp::WRITTEN:
     chr->buffer[*bytes] = 0;
-    size_t resultN = strSplit(chr->buffer, *bytes, color, sizeof(color), ':');
+    size_t resultN = strSplitToUL(chr->buffer, *bytes, color, sizeof(color), ':');
     if (resultN != sizeof(color)) {
       ESP_LOGE("APP", "Invalid color string: %s", chr->buffer);
       return 1;
@@ -160,7 +160,7 @@ int timeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op, LightManager::HrMin 
     chr->buffer[*bytes] = 0;
     uint8_t result[2];
 
-    size_t resultN = strSplit(chr->buffer, *bytes, result, sizeof(result), ':');
+    size_t resultN = strSplitToUL(chr->buffer, *bytes, result, sizeof(result), ':');
     if (resultN != sizeof(result) || result[0] >= 24 || result[1] >= 60) {
       ESP_LOGE("APP", "Invalid time string: %s", chr->buffer);
       return 1;
@@ -234,6 +234,26 @@ int wakeTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
     config_set_actions(actions);
     ESP_LOGI("APP", "Set wake %02d:%02d, off %02d:%02d", wake->hour, wake->minute, off->hour,
              off->minute);
+  }
+
+  return 0;
+}
+
+int currentTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
+  struct tm timeinfo;
+  LightManager::HrMin curr;
+  if (ntm_get_local_time(&timeinfo)) {
+    curr.hour = timeinfo.tm_hour;
+    curr.minute = timeinfo.tm_min;
+  }
+
+  if (timeAccessCb(bytes, chr, op, &curr) != 0) {
+    return 1;
+  }
+  if (op == BtOp::WRITTEN) {
+    ntm_set_offline_time(curr.hour, curr.minute);
+
+    ESP_LOGI("APP", "Set current time %02d:%02d", curr.hour, curr.minute);
   }
 
   return 0;
@@ -450,6 +470,12 @@ extern "C" void app_main() {
                      .readable = true,
                      .writable = true,
                      .access_cb = presleepTimeAccessCb});
+  bt_register(bt_chr{.name = "current time",
+                     .buffer = time_access_buf,
+                     .bufferSize = sizeof(time_access_buf),
+                     .readable = true,
+                     .writable = true,
+                     .access_cb = currentTimeAccessCb});
 
   while (1) {
     esp_task_wdt_reset();
