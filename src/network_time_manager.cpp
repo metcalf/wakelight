@@ -27,14 +27,6 @@ const static char *TAG = "ntm";
 static wifi_config_t s_wifi_config = {
     .sta =
         {
-            /* Setting a password implies station will connect to all security modes including WEP/WPA.
-             * However these modes are deprecated and not advisable to be used. Incase your Access point
-             * doesn't support WPA2, these mode can be enabled by commenting below line */
-            .threshold =
-                {
-                    .authmode = WIFI_AUTH_WPA2_PSK,
-                },
-
             .pmf_cfg = {.capable = true, .required = false},
         },
 };
@@ -206,9 +198,13 @@ void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, voi
 
 void ntm_connect(const char *network_name, const char *network_pswd) {
   memcpy(s_wifi_config.sta.ssid, network_name, sizeof(s_wifi_config.sta.ssid));
-  memcpy(s_wifi_config.sta.password, network_pswd, sizeof(s_wifi_config.sta.ssid));
+  memcpy(s_wifi_config.sta.password, network_pswd, sizeof(s_wifi_config.sta.password));
 
   xEventGroupSetBits(s_ntm_event_group, WIFI_ACTIVE_BIT);
+
+  // Zero-length password
+  s_wifi_config.sta.threshold.authmode =
+      (network_pswd[0] == 0) ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
 
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &s_wifi_config));
