@@ -54,7 +54,7 @@ void sntp_sync_time(struct timeval *tv) {
   xEventGroupSetBits(s_ntm_event_group, CLOCK_UPDATED_BIT);
 }
 
-esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
+esp_err_t ntm_http_event_handler(esp_http_client_event_t *evt) {
   switch (evt->event_id) {
   case HTTP_EVENT_ERROR:
     ESP_LOGD(TAG, "HTTP_EVENT_ERROR");
@@ -91,7 +91,7 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
   return ESP_OK;
 }
 
-void tz_fetch_task(void *pvParameters) {
+void ntm_tz_fetch_task(void *pvParameters) {
   while (1) {
     xTaskNotifyWaitIndexed(0, 0, ULONG_MAX, NULL, portMAX_DELAY);
     s_http_output_len = 0;
@@ -106,7 +106,7 @@ void tz_fetch_task(void *pvParameters) {
         .host = "ip-api.com",
         .path = "/csv",
         .query = "fields=status,message,timezone",
-        .event_handler = _http_event_handler,
+        .event_handler = ntm_http_event_handler,
         .user_data = s_response_buffer, // Pass address of local buffer to get response
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -216,7 +216,7 @@ void ntm_connect(const char *network_name, const char *network_pswd) {
 void ntm_init() {
   s_ntm_event_group = xEventGroupCreate();
 
-  xTaskCreate(&tz_fetch_task, "tz_fetch_task", 8192, NULL, tskIDLE_PRIORITY + 1,
+  xTaskCreate(&ntm_tz_fetch_task, "tz_fetch_task", 8192, NULL, tskIDLE_PRIORITY + 1,
               &s_tz_fetch_task_handle);
 
   ESP_ERROR_CHECK(esp_netif_init());
