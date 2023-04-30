@@ -154,7 +154,6 @@ void ntm_tz_fetch_task(void *pvParameters) {
   vTaskDelete(NULL);
 }
 
-// TODO: Implement auto-reconnection, periodic retries, etc...
 void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
   if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
     esp_wifi_connect();
@@ -175,7 +174,6 @@ void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, voi
       ESP_LOGI(TAG, "retrying connection to AP");
     } else {
       ESP_LOGW(TAG, "failed to connect to the AP");
-      // TODO: Add periodic retries?
       xEventGroupSetBits(s_ntm_event_group, WIFI_FAIL_BIT);
     }
   } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {

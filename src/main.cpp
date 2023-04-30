@@ -51,7 +51,7 @@ char wifi_ssid[APP_CONFIG_WIFI_SSID_SIZE];
 char wifi_pswd[APP_CONFIG_WIFI_PSWD_SIZE];
 
 LightManager lightManager(actions);
-Button button(BUTTON_GPIO, BUTTON_HOLD_MS);
+Button button(BUTTON_GPIO, BUTTON_HOLD_MS, BUTTON_HOLD_MS);
 Dotstar dotstar;
 Power power;
 
@@ -350,15 +350,25 @@ void loop() {
     break;
   case Button::CallbackReason::HOLD_START:
     ESP_LOGI("APP", "Button: HOLD_START");
-    btWroteColor = false;
-    bt_start();
-    light_set_color(LIGHT_COLOR_BLUE, 0);
+    if (bt_is_enabled()) {
+      // If we hold again after Bluetooth is enabled, restart.
+      esp_restart();
+    } else {
+      // Set the color to blue to indicate the state but don't actually enable Bluetooth
+      // until releasing the button since continuing to hold will trigger a restart
+      // instead.
+      light_set_color(LIGHT_COLOR_BLUE, 0);
+    }
 
     break;
   case Button::CallbackReason::HOLD_REPEAT:
+    // If we hold for double the bluetooth-enabled cycle, restart
     ESP_LOGI("APP", "Button: HOLD_REPEAT");
+    esp_restart();
     break;
   case Button::CallbackReason::HOLD_RELEASE:
+    btWroteColor = false;
+    bt_start();
     ESP_LOGI("APP", "Button: HOLD_RELEASE");
     break;
   case Button::CallbackReason::NONE:
