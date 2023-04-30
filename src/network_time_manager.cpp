@@ -21,6 +21,7 @@
 #define TZ_READY_BIT BIT3
 #define TZ_FAIL_BIT BIT4
 #define CLOCK_UPDATED_BIT BIT5
+#define JAN_1_2020_EPOCH 1577836800
 
 const static char *TAG = "ntm";
 
@@ -246,7 +247,9 @@ void ntm_disconnect() {
 void ntm_set_offline_time(time_t hour, time_t min) {
   ntm_set_posix_tz("UTC");
 
-  const timeval tv = timeval{.tv_sec = (hour * 60 + min) * 60};
+  // We add the epoch time for Jan 1, 2020 to our manual time since we treat very old
+  // times as likely invalid in ntm_get_local_time.
+  const timeval tv = timeval{.tv_sec = JAN_1_2020_EPOCH + (hour * 60 + min) * 60};
 
   settimeofday(&tv, NULL);
   ESP_LOGI(TAG, "time set manually");

@@ -241,7 +241,7 @@ int wakeTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
 
 int currentTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
   struct tm timeinfo;
-  LightManager::HrMin curr;
+  LightManager::HrMin curr = {0, 0};
   if (ntm_get_local_time(&timeinfo)) {
     curr.hour = timeinfo.tm_hour;
     curr.minute = timeinfo.tm_min;
