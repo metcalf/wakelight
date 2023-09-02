@@ -50,7 +50,7 @@ void sntp_sync_time(struct timeval *tv) {
   if (old.tv_sec < 16e8) { // Before ~2020
     ESP_LOGI(TAG, "time initialized");
   } else {
-    ESP_LOGI(TAG, "time updated, offset: %ld", (long)old.tv_sec - tv->tv_sec);
+    ESP_LOGI(TAG, "time updated, offset: %lld", (long)old.tv_sec - tv->tv_sec);
   }
   xEventGroupSetBits(s_ntm_event_group, CLOCK_UPDATED_BIT);
 }
@@ -65,6 +65,9 @@ esp_err_t ntm_http_event_handler(esp_http_client_event_t *evt) {
     break;
   case HTTP_EVENT_HEADER_SENT:
     ESP_LOGD(TAG, "HTTP_EVENT_HEADER_SENT");
+    break;
+  case HTTP_EVENT_REDIRECT:
+    ESP_LOGD(TAG, "HTTP_EVENT_REDIRECT");
     break;
   case HTTP_EVENT_ON_HEADER:
     ESP_LOGD(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
@@ -123,7 +126,7 @@ void ntm_tz_fetch_task(void *pvParameters) {
 
     esp_err_t err = esp_http_client_perform(client);
     if (err == ESP_OK) {
-      ESP_LOGI(TAG, "HTTP GET Status = %d, content_length = %d",
+      ESP_LOGI(TAG, "HTTP GET Status = %d, content_length = %lld",
                esp_http_client_get_status_code(client), esp_http_client_get_content_length(client));
     } else {
       ESP_LOGW(TAG, "HTTP GET request failed: %s", esp_err_to_name(err));

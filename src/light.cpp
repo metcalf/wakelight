@@ -29,7 +29,7 @@ bool is_on(uint8_t color[3]) {
   return false;
 }
 
-void fade_timer_cb(void *pvParameters) {
+void fade_timer_cb(TimerHandle_t xTimer) {
   uint64_t now = millis64();
   bool done = now >= s_end_ms;
 

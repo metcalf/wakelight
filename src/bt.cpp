@@ -311,7 +311,7 @@ static int bt_gap_event(struct ble_gap_event *event, void *arg) {
     if (event->passkey.params.action == BLE_SM_IOACT_DISP) {
       pkey.action = event->passkey.params.action;
       pkey.passkey = 123456; // This is the passkey to be entered on peer
-      ESP_LOGI(tag, "Enter passkey %d on the peer side", pkey.passkey);
+      ESP_LOGI(tag, "Enter passkey %lu on the peer side", pkey.passkey);
       rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey);
       ESP_LOGI(tag, "ble_sm_inject_io result: %d\n", rc);
     } else if (event->passkey.params.action == BLE_SM_IOACT_NUMCMP) {
@@ -362,7 +362,7 @@ void bt_host_task(void *param) {
   nimble_port_run();
 
   nimble_port_freertos_deinit();
-  ESP_ERROR_CHECK(esp_nimble_hci_and_controller_deinit());
+  ESP_ERROR_CHECK(esp_nimble_hci_deinit());
 }
 
 void bt_register(bt_chr chr) {
@@ -430,7 +430,7 @@ void bt_start() {
     return;
   }
 
-  ESP_ERROR_CHECK(esp_nimble_hci_and_controller_init());
+  ESP_ERROR_CHECK(esp_nimble_hci_init());
   nimble_port_init();
 
   bt_init();
@@ -447,7 +447,7 @@ void bt_stop() {
   int ret = nimble_port_stop();
   if (ret == 0) {
     nimble_port_deinit();
-    ret = esp_nimble_hci_and_controller_deinit();
+    ret = esp_nimble_hci_deinit();
     if (ret != ESP_OK) {
       ESP_LOGE(tag, "esp_nimble_hci_and_controller_deinit() failed with error: %d", ret);
     }

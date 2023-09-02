@@ -3,6 +3,7 @@
 #include "driver/rtc_io.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <esp_timer.h>
 
 #define DOTSTAR_CLK GPIO_NUM_12
 #define DOTSTAR_DATA GPIO_NUM_2

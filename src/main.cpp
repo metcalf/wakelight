@@ -310,8 +310,9 @@ void loop() {
   if (nextLightUpdateMillis < millis64() || ntm_poll_clock_updated()) {
     if (ntm_get_local_time(&timeinfo)) {
       update = lightManager.update(timeinfo);
-      ESP_LOGI("APP", "%02d:%02d R%03d|G%03d|B%03d next: %d\r\n", timeinfo.tm_hour, timeinfo.tm_min,
-               (*update.color)[0], (*update.color)[1], (*update.color)[2], update.nextUpdateSecs);
+      ESP_LOGI("APP", "%02d:%02d R%03d|G%03d|B%03d next: %lu\r\n", timeinfo.tm_hour,
+               timeinfo.tm_min, (*update.color)[0], (*update.color)[1], (*update.color)[2],
+               update.nextUpdateSecs);
 
       if (!std::equal(lastUpdateColor, std::end(lastUpdateColor), *update.color)) {
         for (size_t i = 0; i < 3; i++) {
