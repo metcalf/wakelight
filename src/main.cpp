@@ -32,16 +32,16 @@
 #define BUTTON_HOLD_MS 5 * 1000
 #define ERROR_SLEEP_DURATION_S 60 * 30
 #define WAKE_ON_MINS 60
-#define NAP_MINS 90
+// #define NAP_MINS 90
 #define PRESLEEP_MINS 60
 
-#define WAKE_IDX 0
-#define WAKE_OFF_IDX WAKE_IDX + 1
-#define NAP_IDX WAKE_OFF_IDX + 1
-#define NAP_WAKE_IDX NAP_IDX + 1
-#define NAP_OFF_IDX NAP_WAKE_IDX + 1
-#define PRESLEEP_IDX NAP_OFF_IDX + 1
-#define SLEEP_IDX PRESLEEP_IDX + 1
+#define WAKE_IDX __COUNTER__
+#define WAKE_OFF_IDX __COUNTER__
+// #define NAP_IDX __COUNTER__
+#define NAP_WAKE_IDX __COUNTER__
+#define NAP_OFF_IDX __COUNTER__
+#define PRESLEEP_IDX __COUNTER__
+#define SLEEP_IDX __COUNTER__
 
 #define BUTTON_GPIO GPIO_NUM_4
 
@@ -200,22 +200,19 @@ int presleepTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
   return 0;
 }
 
-int napTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
-  LightManager::HrMin *nap = &actions[NAP_IDX].time;
+int napWakeTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
+  LightManager::HrMin *wake = &actions[NAP_WAKE_IDX].time;
 
-  if (timeAccessCb(bytes, chr, op, nap) != 0) {
+  if (timeAccessCb(bytes, chr, op, wake) != 0) {
     return 1;
   }
   if (op == BtOp::WRITTEN) {
-    LightManager::HrMin *wake = &actions[NAP_WAKE_IDX].time;
     LightManager::HrMin *off = &actions[NAP_OFF_IDX].time;
-
-    setNextTime(nap, wake, NAP_MINS);
     setNextTime(wake, off, WAKE_ON_MINS);
 
     config_set_actions(actions);
-    ESP_LOGI("APP", "Set nap %02d:%02d, wake %02d:%02d, off %02d:%02d", nap->hour, nap->minute,
-             wake->hour, wake->minute, off->hour, off->minute);
+    ESP_LOGI("APP", "Set nap wake %02d:%02d, off %02d:%02d", wake->hour, wake->minute, off->hour,
+             off->minute);
   }
 
   return 0;
@@ -468,12 +465,12 @@ extern "C" void app_main() {
                      .readable = true,
                      .writable = true,
                      .access_cb = wakeTimeAccessCb});
-  bt_register(bt_chr{.name = "nap time",
+  bt_register(bt_chr{.name = "nap wake time",
                      .buffer = time_access_buf,
                      .bufferSize = sizeof(time_access_buf),
                      .readable = true,
                      .writable = true,
-                     .access_cb = napTimeAccessCb});
+                     .access_cb = napWakeTimeAccessCb});
   bt_register(bt_chr{.name = "sleep time",
                      .buffer = time_access_buf,
                      .bufferSize = sizeof(time_access_buf),
