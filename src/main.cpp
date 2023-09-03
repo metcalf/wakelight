@@ -35,13 +35,13 @@
 // #define NAP_MINS 90
 #define PRESLEEP_MINS 60
 
-#define WAKE_IDX __COUNTER__
-#define WAKE_OFF_IDX __COUNTER__
+#define WAKE_IDX 0
+#define WAKE_OFF_IDX WAKE_IDX + 1
 // #define NAP_IDX __COUNTER__
-#define NAP_WAKE_IDX __COUNTER__
-#define NAP_OFF_IDX __COUNTER__
-#define PRESLEEP_IDX __COUNTER__
-#define SLEEP_IDX __COUNTER__
+#define NAP_WAKE_IDX WAKE_OFF_IDX + 1
+#define NAP_OFF_IDX NAP_WAKE_IDX + 1
+#define PRESLEEP_IDX NAP_OFF_IDX + 1
+#define SLEEP_IDX PRESLEEP_IDX + 1
 
 #define BUTTON_GPIO GPIO_NUM_4
 
@@ -301,6 +301,51 @@ uint64_t getNextSleepTime() {
   return 0;
 }
 
+void register_bt_handlers() {
+  bt_register(bt_chr{.name = "wifi ssid",
+                     .buffer = wifi_ssid,
+                     .bufferSize = sizeof(wifi_ssid) - 1, // Ensure space for null termination
+                     .readable = true,
+                     .writable = true,
+                     .access_cb = wifiSsidAccessCb});
+  bt_register(bt_chr{.name = "wifi pass",
+                     .buffer = wifi_pswd,
+                     .bufferSize = sizeof(wifi_pswd) - 1, // Ensure space for null termination
+                     .readable = false,
+                     .writable = true,
+                     .access_cb = wifiPswdAccessCb});
+  bt_register(bt_chr{.name = "current light",
+                     .buffer = color_access_buf,
+                     .bufferSize = sizeof(color_access_buf),
+                     .readable = true,
+                     .writable = true,
+                     .access_cb = colorAccessCb});
+  bt_register(bt_chr{.name = "wake time",
+                     .buffer = time_access_buf,
+                     .bufferSize = sizeof(time_access_buf),
+                     .readable = true,
+                     .writable = true,
+                     .access_cb = wakeTimeAccessCb});
+  bt_register(bt_chr{.name = "nap wake time",
+                     .buffer = time_access_buf,
+                     .bufferSize = sizeof(time_access_buf),
+                     .readable = true,
+                     .writable = true,
+                     .access_cb = napWakeTimeAccessCb});
+  bt_register(bt_chr{.name = "sleep time",
+                     .buffer = time_access_buf,
+                     .bufferSize = sizeof(time_access_buf),
+                     .readable = true,
+                     .writable = true,
+                     .access_cb = presleepTimeAccessCb});
+  bt_register(bt_chr{.name = "current time",
+                     .buffer = time_access_buf,
+                     .bufferSize = sizeof(time_access_buf),
+                     .readable = true,
+                     .writable = true,
+                     .access_cb = currentTimeAccessCb});
+}
+
 void loop() {
   struct tm timeinfo;
   LightManager::Next update;
@@ -442,48 +487,11 @@ extern "C" void app_main() {
   ESP_LOGI("APP", "Initializing network time manager");
   ntm_init();
 
-  bt_register(bt_chr{.name = "wifi ssid",
-                     .buffer = wifi_ssid,
-                     .bufferSize = sizeof(wifi_ssid) - 1, // Ensure space for null termination
-                     .readable = true,
-                     .writable = true,
-                     .access_cb = wifiSsidAccessCb});
-  bt_register(bt_chr{.name = "wifi pass",
-                     .buffer = wifi_pswd,
-                     .bufferSize = sizeof(wifi_pswd) - 1, // Ensure space for null termination
-                     .readable = false,
-                     .writable = true,
-                     .access_cb = wifiPswdAccessCb});
-  bt_register(bt_chr{.name = "current light",
-                     .buffer = color_access_buf,
-                     .bufferSize = sizeof(color_access_buf),
-                     .readable = true,
-                     .writable = true,
-                     .access_cb = colorAccessCb});
-  bt_register(bt_chr{.name = "wake time",
-                     .buffer = time_access_buf,
-                     .bufferSize = sizeof(time_access_buf),
-                     .readable = true,
-                     .writable = true,
-                     .access_cb = wakeTimeAccessCb});
-  bt_register(bt_chr{.name = "nap wake time",
-                     .buffer = time_access_buf,
-                     .bufferSize = sizeof(time_access_buf),
-                     .readable = true,
-                     .writable = true,
-                     .access_cb = napWakeTimeAccessCb});
-  bt_register(bt_chr{.name = "sleep time",
-                     .buffer = time_access_buf,
-                     .bufferSize = sizeof(time_access_buf),
-                     .readable = true,
-                     .writable = true,
-                     .access_cb = presleepTimeAccessCb});
-  bt_register(bt_chr{.name = "current time",
-                     .buffer = time_access_buf,
-                     .bufferSize = sizeof(time_access_buf),
-                     .readable = true,
-                     .writable = true,
-                     .access_cb = currentTimeAccessCb});
+  ESP_LOGI("APP", "Configuring bluetooth handlers");
+  register_bt_handlers();
+
+  ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+  ESP_ERROR_CHECK(esp_task_wdt_status(NULL));
 
   while (1) {
     esp_task_wdt_reset();

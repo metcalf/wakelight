@@ -1,5 +1,7 @@
 #pragma once
 
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_oneshot.h"
 #include "stdint.h"
 
 #define PWR_SENSE_GPIO GPIO_NUM_26
@@ -17,4 +19,6 @@ private:
   uint64_t nextVoltageTimeMillis_;
   float lastMeasuredVoltage_;
   bool lastReportPoweredState_;
+  adc_oneshot_unit_handle_t adc1Handle_;
+  adc_cali_handle_t adcCaliHandle_;
 };

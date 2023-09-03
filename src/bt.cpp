@@ -388,6 +388,8 @@ void bt_init() { /* Initialize the NimBLE host configuration. */
   ble_hs_cfg.gatts_register_cb = gatt_svr_register_cb;
   ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
   ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
+  // Disable security manager so we can reconnect without repairing or storing keys
+  ble_hs_cfg.sm_sc = 0;
 
   ble_svc_gap_init();
   ble_svc_gatt_init();
@@ -430,8 +432,7 @@ void bt_start() {
     return;
   }
 
-  ESP_ERROR_CHECK(esp_nimble_hci_init());
-  nimble_port_init();
+  ESP_ERROR_CHECK(nimble_port_init());
 
   bt_init();
 
@@ -446,10 +447,9 @@ void bt_stop() {
   s_is_enabled = false;
   int ret = nimble_port_stop();
   if (ret == 0) {
-    nimble_port_deinit();
-    ret = esp_nimble_hci_deinit();
+    ret = nimble_port_deinit();
     if (ret != ESP_OK) {
-      ESP_LOGE(tag, "esp_nimble_hci_and_controller_deinit() failed with error: %d", ret);
+      ESP_LOGE(tag, "nimble_port_deinit() failed with error: %d", ret);
     }
   }
 }
