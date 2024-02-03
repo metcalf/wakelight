@@ -11,7 +11,7 @@
 #define NVS_CONFIG_VERSION 8
 #define STORAGE_NAMESPACE "config"
 
-const static char *TAG = "ntm";
+const static char *TAG = "cfg";
 
 static std::vector<LightManager::Action> default_actions = {
     // Prewake
