@@ -8,7 +8,7 @@
 #include "light.h"
 #include "wifi_credentials.h"
 
-#define NVS_CONFIG_VERSION 8
+#define NVS_CONFIG_VERSION 9
 #define STORAGE_NAMESPACE "config"
 
 const static char *TAG = "cfg";
@@ -22,7 +22,7 @@ static std::vector<LightManager::Action> default_actions = {
     // Wake off
     LightManager::Action{LightManager::HrMin{.hour = 8, .minute = 00}, LIGHT_COLOR_OFF},
     // Nap
-    // LightManager::Action{LightManager::HrMin{.hour = 13, .minute = 15}, LIGHT_COLOR_RED},
+    LightManager::Action{LightManager::HrMin{.hour = 13, .minute = 15}, LIGHT_COLOR_RED},
     // Nap wake
     LightManager::Action{LightManager::HrMin{.hour = 14, .minute = 45}, LIGHT_COLOR_GREEN},
     // Nap wake off

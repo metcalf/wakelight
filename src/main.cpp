@@ -32,13 +32,13 @@
 #define BUTTON_HOLD_MS 5 * 1000
 #define ERROR_SLEEP_DURATION_S 60 * 30
 #define WAKE_ON_MINS 60
-// #define NAP_MINS 90
+#define NAP_MINS 90
 #define PRESLEEP_MINS 60
 
 #define WAKE_IDX 0
 #define WAKE_OFF_IDX WAKE_IDX + 1
-// #define NAP_IDX __COUNTER__
-#define NAP_WAKE_IDX WAKE_OFF_IDX + 1
+#define NAP_IDX WAKE_OFF_IDX + 1
+#define NAP_WAKE_IDX NAP_IDX + 1
 #define NAP_OFF_IDX NAP_WAKE_IDX + 1
 #define PRESLEEP_IDX NAP_OFF_IDX + 1
 #define SLEEP_IDX PRESLEEP_IDX + 1
@@ -63,7 +63,8 @@ char color_access_buf[12];
 char time_access_buf[6];
 
 // TODO: Write tests for this
-size_t strSplitToUL(const char *str, size_t strN, uint8_t *dest, size_t destN, char delim) {
+size_t strSplitToUL(const char *str, size_t strN, uint8_t *dest, size_t destN,
+                    char delim) {
   size_t resultN = 0;
 
   char *end = (char *)str + strN;
@@ -127,11 +128,13 @@ int colorAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
   switch (op) {
   case BtOp::REQUEST_READ:
     light_get_color(color);
-    *bytes = snprintf(chr->buffer, chr->bufferSize, "%03d:%03d:%03d", color[0], color[1], color[2]);
+    *bytes = snprintf(chr->buffer, chr->bufferSize, "%03d:%03d:%03d", color[0],
+                      color[1], color[2]);
     break;
   case BtOp::WRITTEN:
     chr->buffer[*bytes] = 0;
-    size_t resultN = strSplitToUL(chr->buffer, *bytes, color, sizeof(color), ':');
+    size_t resultN =
+        strSplitToUL(chr->buffer, *bytes, color, sizeof(color), ':');
     if (resultN != sizeof(color)) {
       ESP_LOGE("APP", "Invalid color string: %s", chr->buffer);
       return 1;
@@ -151,16 +154,19 @@ int colorAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
   return 0;
 }
 
-int timeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op, LightManager::HrMin *target) {
+int timeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op,
+                 LightManager::HrMin *target) {
   switch (op) {
   case BtOp::REQUEST_READ:
-    *bytes = snprintf(chr->buffer, chr->bufferSize, "%02d:%02d", target->hour, target->minute);
+    *bytes = snprintf(chr->buffer, chr->bufferSize, "%02d:%02d", target->hour,
+                      target->minute);
     break;
   case BtOp::WRITTEN:
     chr->buffer[*bytes] = 0;
     uint8_t result[2];
 
-    size_t resultN = strSplitToUL(chr->buffer, *bytes, result, sizeof(result), ':');
+    size_t resultN =
+        strSplitToUL(chr->buffer, *bytes, result, sizeof(result), ':');
     if (resultN != sizeof(result) || result[0] >= 24 || result[1] >= 60) {
       ESP_LOGE("APP", "Invalid time string: %s", chr->buffer);
       return 1;
@@ -173,7 +179,8 @@ int timeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op, LightManager::HrMin 
   return 0;
 }
 
-void setNextTime(LightManager::HrMin *time, LightManager::HrMin *next, int incr_mins) {
+void setNextTime(LightManager::HrMin *time, LightManager::HrMin *next,
+                 int incr_mins) {
   next->hour = time->hour;
   next->minute = time->minute + incr_mins;
   if (next->minute >= 60) {
@@ -193,25 +200,29 @@ int presleepTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
     setNextTime(presleep, sleep, PRESLEEP_MINS);
 
     config_set_actions(actions);
-    ESP_LOGI("APP", "Set presleep %02d:%02d, sleep %02d:%02d", presleep->hour, presleep->minute,
-             sleep->hour, sleep->minute);
+    ESP_LOGI("APP", "Set presleep %02d:%02d, sleep %02d:%02d", presleep->hour,
+             presleep->minute, sleep->hour, sleep->minute);
   }
 
   return 0;
 }
 
-int napWakeTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
-  LightManager::HrMin *wake = &actions[NAP_WAKE_IDX].time;
+int napTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
+  LightManager::HrMin *nap = &actions[NAP_IDX].time;
 
-  if (timeAccessCb(bytes, chr, op, wake) != 0) {
+  if (timeAccessCb(bytes, chr, op, nap) != 0) {
     return 1;
   }
   if (op == BtOp::WRITTEN) {
+    LightManager::HrMin *wake = &actions[NAP_WAKE_IDX].time;
     LightManager::HrMin *off = &actions[NAP_OFF_IDX].time;
+
+    setNextTime(nap, wake, NAP_MINS);
     setNextTime(wake, off, WAKE_ON_MINS);
 
     config_set_actions(actions);
-    ESP_LOGI("APP", "Set nap wake %02d:%02d, off %02d:%02d", wake->hour, wake->minute, off->hour,
+    ESP_LOGI("APP", "Set nap %02d:%02d, wake %02d:%02d, off %02d:%02d",
+             nap->hour, nap->minute, wake->hour, wake->minute, off->hour,
              off->minute);
   }
 
@@ -229,8 +240,8 @@ int wakeTimeAccessCb(size_t *bytes, const bt_chr *chr, BtOp op) {
     setNextTime(wake, off, WAKE_ON_MINS);
 
     config_set_actions(actions);
-    ESP_LOGI("APP", "Set wake %02d:%02d, off %02d:%02d", wake->hour, wake->minute, off->hour,
-             off->minute);
+    ESP_LOGI("APP", "Set wake %02d:%02d, off %02d:%02d", wake->hour,
+             wake->minute, off->hour, off->minute);
   }
 
   return 0;
@@ -268,14 +279,16 @@ void enterSleep(uint64_t sleep_time_ms) {
   ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(BUTTON_GPIO, 0));
   ESP_ERROR_CHECK(rtc_gpio_pullup_en(BUTTON_GPIO));
   // EXT1 uses a GPIO bitmask instead of the raw GPIO number
-  ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup(1ULL << PWR_SENSE_GPIO, ESP_EXT1_WAKEUP_ANY_HIGH));
+  ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup(1ULL << PWR_SENSE_GPIO,
+                                               ESP_EXT1_WAKEUP_ANY_HIGH));
   ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(sleep_time_ms * 1000));
 
   // TODO: Just using light sleep for now because for some reason
   // deep sleep isn't waking up.
   // if (lightOn) {
   // Only light sleep appears to support running ledc
-  // For some reason we need to explicitly tell the ESP32 to keep the 8mhz clock on for ledc.
+  // For some reason we need to explicitly tell the ESP32 to keep the 8mhz clock
+  // on for ledc.
   ESP_ERROR_CHECK(esp_sleep_pd_config(ESP_PD_DOMAIN_RTC8M, ESP_PD_OPTION_ON));
   ESP_ERROR_CHECK(esp_light_sleep_start());
   // } else {
@@ -293,8 +306,8 @@ uint64_t getNextSleepTime() {
     return nextLightUpdateMillis - millis64();
   }
   // If we haven't gotten the time for the first time, don't sleep unless we end
-  // up in an error state. This effectively implements retries on the network logic
-  // since it restarts on wake.
+  // up in an error state. This effectively implements retries on the network
+  // logic since it restarts on wake.
   if (ntm_has_error()) {
     return ERROR_SLEEP_DURATION_S * 1000;
   }
@@ -304,13 +317,15 @@ uint64_t getNextSleepTime() {
 void register_bt_handlers() {
   bt_register(bt_chr{.name = "wifi ssid",
                      .buffer = wifi_ssid,
-                     .bufferSize = sizeof(wifi_ssid) - 1, // Ensure space for null termination
+                     .bufferSize = sizeof(wifi_ssid) -
+                                   1, // Ensure space for null termination
                      .readable = true,
                      .writable = true,
                      .access_cb = wifiSsidAccessCb});
   bt_register(bt_chr{.name = "wifi pass",
                      .buffer = wifi_pswd,
-                     .bufferSize = sizeof(wifi_pswd) - 1, // Ensure space for null termination
+                     .bufferSize = sizeof(wifi_pswd) -
+                                   1, // Ensure space for null termination
                      .readable = false,
                      .writable = true,
                      .access_cb = wifiPswdAccessCb});
@@ -326,12 +341,12 @@ void register_bt_handlers() {
                      .readable = true,
                      .writable = true,
                      .access_cb = wakeTimeAccessCb});
-  bt_register(bt_chr{.name = "nap wake time",
+  bt_register(bt_chr{.name = "nap time",
                      .buffer = time_access_buf,
                      .bufferSize = sizeof(time_access_buf),
                      .readable = true,
                      .writable = true,
-                     .access_cb = napWakeTimeAccessCb});
+                     .access_cb = napTimeAccessCb});
   bt_register(bt_chr{.name = "sleep time",
                      .buffer = time_access_buf,
                      .bufferSize = sizeof(time_access_buf),
@@ -355,11 +370,12 @@ void loop() {
   if (nextLightUpdateMillis < millis64() || ntm_poll_clock_updated()) {
     if (ntm_get_local_time(&timeinfo)) {
       update = lightManager.update(timeinfo);
-      ESP_LOGI("APP", "%02d:%02d R%03d|G%03d|B%03d next: %lu\r\n", timeinfo.tm_hour,
-               timeinfo.tm_min, (*update.color)[0], (*update.color)[1], (*update.color)[2],
-               update.nextUpdateSecs);
+      ESP_LOGI("APP", "%02d:%02d R%03d|G%03d|B%03d next: %lu\r\n",
+               timeinfo.tm_hour, timeinfo.tm_min, (*update.color)[0],
+               (*update.color)[1], (*update.color)[2], update.nextUpdateSecs);
 
-      if (!std::equal(lastUpdateColor, std::end(lastUpdateColor), *update.color)) {
+      if (!std::equal(lastUpdateColor, std::end(lastUpdateColor),
+                      *update.color)) {
         for (size_t i = 0; i < 3; i++) {
           lastUpdateColor[i] = (*update.color)[i];
         }
@@ -369,7 +385,8 @@ void loop() {
       nextLightUpdateMillis = millis64() + update.nextUpdateSecs * 1000;
     } else {
       ESP_LOGI("APP", "Awaiting time...");
-      nextLightUpdateMillis = millis64() + 1000; // Check the time again in a second
+      nextLightUpdateMillis =
+          millis64() + 1000; // Check the time again in a second
     }
   }
 
@@ -379,8 +396,8 @@ void loop() {
     ESP_LOGI("APP", "Button: PRESS_RELEASE");
     if (bt_is_enabled()) {
       bt_stop();
-      // TODO: There's probably a gentler way to reset this, plus we could only reset if
-      // something changes.
+      // TODO: There's probably a gentler way to reset this, plus we could only
+      // reset if something changes.
       ntm_disconnect();
       ntm_connect(wifi_ssid, wifi_pswd);
       nextLightUpdateMillis = 0; // Force an update in case things have changed
@@ -397,9 +414,9 @@ void loop() {
       // If we hold again after Bluetooth is enabled, restart.
       esp_restart();
     } else {
-      // Set the color to blue to indicate the state but don't actually enable Bluetooth
-      // until releasing the button since continuing to hold will trigger a restart
-      // instead.
+      // Set the color to blue to indicate the state but don't actually enable
+      // Bluetooth until releasing the button since continuing to hold will
+      // trigger a restart instead.
       light_set_color(LIGHT_COLOR_BLUE, 0);
     }
 
@@ -453,9 +470,10 @@ extern "C" void app_main() {
 
   esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
 
-  //Initialize NVS
+  // Initialize NVS
   esp_err_t ret = nvs_flash_init();
-  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
+      ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
     ESP_ERROR_CHECK(nvs_flash_erase());
     ret = nvs_flash_init();
   }
@@ -478,8 +496,9 @@ extern "C" void app_main() {
 
   ESP_LOGI("APP", "Loading config");
   config_load(actions, wifi_ssid, wifi_pswd);
-  ESP_LOGI("APP", "Loaded SSID: %s Pass: %s Wake time: %02d:%02d", wifi_ssid, wifi_pswd,
-           actions[WAKE_IDX].time.hour, actions[WAKE_IDX].time.minute);
+  ESP_LOGI("APP", "Loaded SSID: %s Pass: %s Wake time: %02d:%02d", wifi_ssid,
+           wifi_pswd, actions[WAKE_IDX].time.hour,
+           actions[WAKE_IDX].time.minute);
 
   ESP_LOGI("APP", "Configuring LEDs");
   light_setup();
@@ -496,7 +515,8 @@ extern "C" void app_main() {
   while (1) {
     esp_task_wdt_reset();
     loop();
-    // TODO: Consider switching tick rate back to 100hz and doing less with a loop
+    // TODO: Consider switching tick rate back to 100hz and doing less with a
+    // loop
     vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
